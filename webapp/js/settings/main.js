@@ -14,7 +14,8 @@
 
 import { ROBOT_INFO_TOPIC, SET_VOLUME_SERVICE } from "../constants.js";
 import { ros } from "../rosClient.js";
-import { CATALOG } from "./catalog.js";
+import { SETTINGS_PAGES } from "./catalog.js";
+import { SETTINGS_STYLE } from "./styles.js";
 
 // Assigned per mount by mount() at the bottom. The volume control uses the shared
 // rosbridge socket, which the router connects once at boot and keeps up across
@@ -34,9 +35,6 @@ let cleanups = [];
  * @property {*} value Current form value.
  * @property {boolean} savedOverridden  Last-saved (on-disk) state.
  * @property {*} savedValue
- * @property {boolean} [savedWasOverridden]  State before the in-flight save, so the
- *   live-apply pass can tell which knobs actually moved.
- * @property {*} [savedWasValue]
  * @property {() => void} render  Push value + overridden state into the DOM control.
  * @property {HTMLElement} row
  * @property {HTMLElement} [errEl]  Out-of-range message; absent on non-numeric knobs.
@@ -45,14 +43,33 @@ let cleanups = [];
 const entries = [];
 
 /**
- * @typedef {Object} GroupUI
- * @property {HTMLElement} section  The collapsible group <section>.
- * @property {HTMLButtonElement} tab  Its clickable header.
- * @property {HTMLElement} dot  Unsaved-changes indicator on the header.
- * @property {Entry[]} entries  Knob entries belonging to this group.
+ * @typedef {Object} PageUI
+ * @property {HTMLElement} panel  Detail-pane content for this destination.
+ * @property {HTMLButtonElement} row  Index list row that opens this destination.
+ * @property {HTMLElement} dot  Unsaved-changes indicator on the index row.
+ * @property {Entry[]} entries  Knob entries belonging to this destination.
  */
-/** @type {GroupUI[]} */
-const sections = [];
+/** @type {PageUI[]} */
+const pages = [];
+/**
+ * @typedef {Object} SearchTarget
+ * @property {Entry} entry
+ * @property {PageUI} page
+ * @property {string} context
+ * @property {string} haystack
+ */
+/** @type {SearchTarget[]} */
+const searchTargets = [];
+/** Page shell; toggles `.is-detail` for the index → detail drill-in. */
+/** @type {HTMLElement | null} */
+let bodyEl = null;
+/** Index search field; cleared when returning from a detail page. */
+/** @type {HTMLInputElement | null} */
+let searchInput = null;
+/** @type {HTMLElement | null} */
+let indexCardEl = null;
+/** @type {HTMLElement | null} */
+let searchResultsEl = null;
 
 // Created fresh in build() each mount, so re-mounting never double-binds their
 // click handlers.
@@ -61,104 +78,6 @@ const sections = [];
 /** @type {HTMLButtonElement} */ let restartBtn;
 /** @type {HTMLElement} */ let dirtyEl;
 /** @type {HTMLElement} */ let statusEl;
-
-const STYLE = `
-.settings-page { position: absolute; inset: 0; display: flex; flex-direction: column; }
-.settings-scroll { flex: 1; overflow-y: auto; min-height: 0; }
-.settings-wrap { max-width: 760px; margin: 0 auto; padding: 24px 28px 32px; }
-.settings-wrap .page-title { margin: 0 0 4px; font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
-.settings-note { color: var(--muted, #8a90a0); font-size: 13px; margin: 2px 0 22px; }
-.set-group { border-bottom: 1px solid var(--hairline, #2a2f3a); }
-.set-group:last-of-type { border-bottom: none; }
-.set-group-h { display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box;
-  font: inherit; font-size: 14px; font-weight: 600; text-transform: none; letter-spacing: 0;
-  color: var(--muted, #8a90a0); background: none; border: none; cursor: pointer;
-  padding: 15px 4px; margin: 0; text-align: left; transition: color .15s ease; }
-.set-group-h:hover, .set-group.open .set-group-h { color: var(--text, #e7e7ea); }
-.set-group-chev { flex: none; color: var(--muted, #8a90a0); transition: transform .2s ease, color .2s ease; }
-.set-group.open .set-group-chev { transform: rotate(90deg); color: var(--primary, #7569FD); }
-.set-group-count { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--muted, #8a90a0); font-variant-numeric: tabular-nums; }
-.set-group-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--primary, #7569FD); display: none; }
-.set-group-dot.show { display: block; }
-.set-group-body { display: none; }
-.set-group.open .set-group-body { display: block; }
-.set-group-body-inner { padding: 0 4px 14px; }
-.set-group-note { color: var(--muted, #8a90a0); font-size: 12px; margin: 0 0 10px; }
-.set-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 11px 12px; border-radius: 10px; border: 1px solid transparent;
-  transition: background .15s ease, border-color .15s ease; }
-.set-row:hover { background: rgba(255,255,255,.025); }
-.set-row.saved { border-color: rgba(224,145,58,.45); background: rgba(224,145,58,.07); }
-.set-row.dirty { border-color: rgba(117,105,253,.6); background: rgba(64,31,251,.10); }
-.set-row.invalid { border-color: rgba(233,86,86,.7); background: rgba(233,86,86,.10); }
-.set-row.invalid input.set-num { border-color: rgba(233,86,86,.8); }
-.set-err { font-size: 12px; color: #e95656; }
-.set-err:empty { display: none; }
-.set-dirty.set-bad { color: #e95656; }
-.set-info { flex: 1 1 240px; min-width: 0; }
-.set-label { font-size: 14px; font-weight: 600; }
-.set-doc { display: block; color: var(--muted, #8a90a0); font-size: 12px; margin-top: 2px; }
-.set-doc-link { color: var(--primary, #7569FD); text-decoration: none; }
-.set-doc-link:hover { text-decoration: underline; }
-.set-ctl { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.set-ctl input.set-num { width: 84px; padding: 6px 8px; text-align: right; border-radius: 8px;
-  border: 1px solid var(--hairline, #2a2f3a); background: var(--panel, #111114); color: inherit; font: inherit; }
-.set-ctl input[type=checkbox] { width: 18px; height: 18px; }
-.set-unit { color: var(--muted, #8a90a0); font-size: 12px; width: 34px; }
-.set-default { color: var(--muted, #8a90a0); font-size: 12px; min-width: 96px; text-align: right; white-space: nowrap; }
-.set-reset { font-size: 12px; background: none; border: none; color: var(--primary, #7569FD); cursor: pointer; padding: 4px; visibility: hidden; }
-.set-row.saved .set-reset, .set-row.dirty .set-reset, .set-row.invalid .set-reset { visibility: visible; }
-.set-bar { flex: none; display: flex; align-items: center; gap: 14px;
-  padding: 12px 28px; background: var(--panel, #111114); border-top: 1px solid var(--hairline, #2a2f3a); }
-.set-save { padding: 9px 20px; border-radius: 9px; border: none; color: #fff; font: inherit; font-weight: 600; cursor: pointer;
-  background: var(--primary, #401FFB); transition: filter .15s ease, opacity .2s ease; }
-.set-save:not(:disabled):hover { filter: brightness(1.12); }
-.set-save:disabled { opacity: .4; cursor: default; }
-.set-reset-all { margin-left: auto; padding: 8px 14px; border-radius: 9px; border: 1px solid var(--hairline, #2a2f3a);
-  background: none; color: var(--text, #e7e7ea); font: inherit; cursor: pointer; }
-.set-reset-all:disabled { opacity: .4; cursor: default; }
-.set-restart { padding: 8px 14px; border-radius: 9px; border: 1px solid var(--hairline, #2a2f3a);
-  background: none; color: var(--text, #e7e7ea); font: inherit; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
-.set-restart:not(:disabled):hover { border-color: var(--primary, #7569FD); color: var(--primary, #7569FD); }
-.set-restart:disabled { opacity: .4; cursor: default; }
-.set-dirty { font-size: 13px; color: var(--primary, #7569FD); }
-.set-status { font-size: 13px; }
-.set-status.ok { color: #3ecf8e; }
-.set-status.err { color: #ff6b6b; }
-.set-status.muted { color: var(--muted, #8a90a0); }
-.set-ctl :is(input, select).set-text { padding: 6px 8px; border-radius: 8px; border: 1px solid var(--hairline, #2a2f3a);
-  background: var(--panel, #111114); color: inherit; font: inherit; }
-.set-ctl > input.set-text { width: 200px; }
-.set-ctl > select.set-text { width: 216px; cursor: pointer; }
-.set-default { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.set-row-list { flex-direction: column; align-items: stretch; }
-.set-row-list .set-ctl { flex-direction: column; align-items: stretch; gap: 8px; margin-top: 10px; }
-.set-list { display: flex; flex-direction: column; gap: 8px; }
-.set-list-item { display: flex; align-items: center; gap: 8px; }
-.set-list-item input.set-text { flex: 1; min-width: 0; }
-.set-list-rm { flex: none; background: none; border: none; color: var(--muted, #8a90a0); cursor: pointer; font-size: 15px; line-height: 1; padding: 4px 8px; }
-.set-list-rm:hover { color: #ff6b6b; }
-.set-list-add { align-self: flex-start; font-size: 12px; background: none; border: 1px dashed var(--hairline, #2a2f3a);
-  color: var(--text, #e7e7ea); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
-.set-list-meta { display: flex; align-items: center; gap: 10px; }
-.set-slider { width: 120px; accent-color: var(--primary, #401FFB); }
-.set-slider-read { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 62px; text-align: right; }
-.set-slider-read .mx { color: var(--muted, #8a90a0); }
-.set-live { border: 1px solid rgba(62,207,142,.30); background: rgba(62,207,142,.05);
-  border-radius: 10px; padding: 14px 16px; margin: 0 0 26px; }
-.set-live .set-row:hover { background: none; }
-.set-live-status { font-size: 12px; margin-left: 6px; }
-.set-live .set-slider { width: 200px; }
-
-/* On narrow screens stack each row and give the controls the full width so the
-   voice picker's dropdown + paste field wrap and flex to fit instead of
-   overflowing. */
-@media (max-width: 520px) {
-  .set-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
-  .set-info { flex: 0 0 auto; }
-  .set-ctl { width: 100%; flex-wrap: wrap; }
-  .set-ctl > select.set-text, .set-ctl > input.set-text { flex: 1 1 160px; width: auto; min-width: 0; }
-}
-`;
 
 /** Walk a path into the nested overrides dict; undefined if absent. */
 function lookup(/** @type {any} */ obj, /** @type {string[]} */ p) {
@@ -186,21 +105,35 @@ function cloneDefault(/** @type {import("./catalog.js").Knob} */ knob) {
   return knob.type === "list" ? /** @type {string[]} */ (knob.default).slice() : knob.default;
 }
 
-/** "default …" label for a knob's default value. */
-function defaultLabel(/** @type {import("./catalog.js").Knob} */ knob) {
-  if (knob.type === "list") {
-    const arr = /** @type {string[]} */ (knob.default);
-    return arr.length ? "default " + arr.join(", ") : "default (none)";
-  }
+/** Short built-in value for the restore link / tooltip. */
+function defaultShort(/** @type {import("./catalog.js").Knob} */ knob) {
+  if (knob.type === "bool") return knob.default ? "on" : "off";
   if (knob.options) {
     const opt = knob.options.find((o) => o.value === knob.default);
-    if (opt) return "default " + opt.label;
+    if (opt) return opt.label;
   }
-  const range =
-    knob.min !== undefined && knob.max !== undefined && !knob.slider
-      ? ` (${knob.min}–${knob.max})`
-      : "";
-  return "default " + String(knob.default) + range;
+  if (knob.type === "list") {
+    const arr = /** @type {string[]} */ (knob.default);
+    return arr.length ? arr.join(", ") : "empty";
+  }
+  return String(knob.default) + (knob.unit ? " " + knob.unit : "");
+}
+
+/** Build the on-release "Restore default" action under a control. */
+function buildRestoreButton(/** @type {import("./catalog.js").Knob} */ knob, /** @type {() => void} */ onReset) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "set-restore";
+  btn.dataset.activate = "release";
+  btn.textContent = "Restore default";
+  const tip = "Restore built-in default (" + defaultShort(knob) + ")";
+  btn.title = tip;
+  btn.setAttribute("aria-label", tip);
+  btn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    onReset();
+  });
+  return btn;
 }
 
 /**
@@ -226,9 +159,9 @@ function boundsError(/** @type {Entry} */ e) {
   const knob = e.knob;
   if (knob.type !== "int" && knob.type !== "float") return "";
   const v = Number(e.value);
-  if (!Number.isFinite(v)) return "must be a number";
-  if (knob.min !== undefined && v < knob.min) return `must be at least ${knob.min}`;
-  if (knob.max !== undefined && v > knob.max) return `must be at most ${knob.max}`;
+  if (!Number.isFinite(v)) return "Not a number";
+  if (knob.min !== undefined && v < knob.min) return `Min ${knob.min}`;
+  if (knob.max !== undefined && v > knob.max) return `Max ${knob.max}`;
   return "";
 }
 
@@ -238,7 +171,24 @@ function isDirty(/** @type {Entry} */ e) {
   return e.overridden && !valuesEqual(e.knob, e.value, e.savedValue);
 }
 
-/** Repaint every row + the section dots + the footer (dirty count, Save enabled). */
+/** True when the form value matches the built-in default (restore would be a no-op). */
+function isAtDefault(/** @type {Entry} */ e) {
+  return valuesEqual(e.knob, e.value, e.knob.default);
+}
+
+/** Mark overridden from the current value — at default means no override. */
+function setOverrideFromValue(/** @type {Entry} */ e) {
+  e.overridden = !isAtDefault(e);
+}
+
+/** Commit a scalar control edit and refresh derived row/footer state. */
+function editScalar(/** @type {Entry} */ entry, /** @type {*} */ value) {
+  entry.value = value;
+  setOverrideFromValue(entry);
+  recompute();
+}
+
+/** Repaint every row + destination dots + the footer (dirty count, Save enabled). */
 function recompute() {
   let dirty = 0;
   let bad = 0;
@@ -252,9 +202,15 @@ function recompute() {
     e.row.classList.toggle("dirty", d && !err);
     e.row.classList.toggle("invalid", Boolean(err));
     e.row.classList.toggle("saved", !d && e.overridden);
+    // Restore tracks value≠default, not dirty/saved — otherwise flipping a toggle
+    // back to default still showed Restore and clicking it felt broken.
+    e.row.classList.toggle("off-default", !isAtDefault(e));
     if (e.errEl) e.errEl.textContent = err;
   }
-  for (const s of sections) s.dot.classList.toggle("show", s.entries.some(isDirty));
+  for (const page of pages) {
+    // Index rows stay quiet — purple dot alone marks unsaved work in the destination.
+    page.dot.classList.toggle("show", page.entries.some(isDirty));
+  }
   dirtyEl.textContent = bad
     ? `${bad} value${bad === 1 ? "" : "s"} out of range`
     : dirty
@@ -431,13 +387,51 @@ function buildVolumeSection() {
   return section;
 }
 
+const INDEX_CHEV =
+  '<svg class="set-index-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9,6 15,12 9,18"/></svg>';
+
+/** Open a destination's detail pane (Linear drill-in). */
+function selectPage(/** @type {PageUI} */ ui) {
+  for (const page of pages) {
+    const on = page === ui;
+    page.panel.classList.toggle("active", on);
+    page.row.classList.toggle("active", on);
+    if (on) page.row.setAttribute("aria-current", "page");
+    else page.row.removeAttribute("aria-current");
+  }
+  bodyEl?.classList.add("is-detail");
+}
+
+/** Clear search so returning to Preferences shows the destination index again. */
+function clearSearch() {
+  if (!searchInput || !indexCardEl || !searchResultsEl) return;
+  if (!searchInput.value) return;
+  searchInput.value = "";
+  renderSearchResults("", indexCardEl, searchResultsEl);
+}
+
+/** Return to the clustered index. */
+function showIndex() {
+  clearSearch();
+  bodyEl?.classList.remove("is-detail");
+  for (const page of pages) {
+    page.panel.classList.remove("active");
+    page.row.classList.remove("active");
+    page.row.removeAttribute("aria-current");
+  }
+}
+
 function build() {
   styleEl = document.createElement("style");
-  styleEl.textContent = STYLE;
+  styleEl.textContent = SETTINGS_STYLE;
   document.head.appendChild(styleEl);
 
   const page = document.createElement("div");
   page.className = "settings-page";
+
+  const body = document.createElement("div");
+  body.className = "settings-body";
+  bodyEl = body;
 
   const scroll = document.createElement("div");
   scroll.className = "settings-scroll";
@@ -445,62 +439,148 @@ function build() {
   const wrap = document.createElement("div");
   wrap.className = "settings-wrap";
 
-  const title = document.createElement("h1");
-  title.className = "page-title";
-  title.textContent = "Settings";
-  wrap.appendChild(title);
+  // —— Index: six task-oriented destinations + direct knob search ——
+  const index = document.createElement("div");
+  index.className = "set-index";
 
-  const note = document.createElement("p");
-  note.className = "settings-note";
-  note.textContent =
-    "Tunable parameter overrides. Blank = the robot's built-in default. Changes save to config/settings.yaml; restart the robot to apply.";
-  wrap.appendChild(note);
+  const indexTitle = document.createElement("h1");
+  indexTitle.className = "page-title";
+  indexTitle.textContent = "Preferences";
+  index.appendChild(indexTitle);
 
-  wrap.appendChild(buildVolumeSection());
+  const indexNote = document.createElement("p");
+  indexNote.className = "settings-note";
+  indexNote.textContent = "Tune how the robot drives, sees, and talks. Changes save to settings.yaml.";
+  index.appendChild(indexNote);
 
-  for (const group of CATALOG) {
-    const g = document.createElement("section");
-    g.className = "set-group";
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "set-search";
+  search.placeholder = "Search settings";
+  search.setAttribute("aria-label", "Search settings");
+  searchInput = search;
+  index.appendChild(search);
 
-    const h = document.createElement("button");
-    h.className = "set-group-h";
-    const chev = document.createElement("span");
-    chev.className = "set-group-chev";
-    chev.innerHTML =
-      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9,6 15,12 9,18"/></svg>';
-    const labelEl = document.createElement("span");
-    labelEl.textContent = group.section;
+  const indexCard = document.createElement("div");
+  indexCard.className = "set-index-card";
+  indexCardEl = indexCard;
+  index.appendChild(indexCard);
+
+  const searchResults = document.createElement("div");
+  searchResults.className = "set-search-results";
+  searchResults.hidden = true;
+  searchResultsEl = searchResults;
+  index.appendChild(searchResults);
+
+  // —— Detail: back + one active pane ——
+  const detail = document.createElement("div");
+  detail.className = "set-detail";
+
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "set-back";
+  back.innerHTML =
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15,6 9,12 15,18"/></svg><span>Preferences</span>';
+  back.addEventListener("click", showIndex);
+  detail.appendChild(back);
+
+  for (const settingsPage of SETTINGS_PAGES) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "set-index-row";
+
+    const icon = document.createElement("span");
+    icon.className = "set-index-icon";
+    icon.style.setProperty(
+      "--icon-url",
+      `url("/js/settings/icons/${settingsPage.icon}")`,
+    );
+
+    const text = document.createElement("span");
+    text.className = "set-index-text";
+    const label = document.createElement("span");
+    label.className = "set-index-label";
+    label.textContent = settingsPage.section;
+    const summary = document.createElement("span");
+    summary.className = "set-index-summary";
+    summary.textContent = settingsPage.summary;
+    text.append(label, summary);
+
     const dot = document.createElement("span");
-    dot.className = "set-group-dot";
+    dot.className = "set-index-dot";
     dot.title = "Unsaved changes in this section";
-    const count = document.createElement("span");
-    count.className = "set-group-count";
-    count.textContent = String(group.knobs.length);
-    h.append(chev, labelEl, dot, count);
-    h.addEventListener("click", () => g.classList.toggle("open"));
-    g.appendChild(h);
 
-    const body = document.createElement("div");
-    body.className = "set-group-body";
-    const inner = document.createElement("div");
-    inner.className = "set-group-body-inner";
-    if (group.note) {
+    row.append(icon, text, dot);
+    row.insertAdjacentHTML("beforeend", INDEX_CHEV);
+    indexCard.appendChild(row);
+
+    const panel = document.createElement("section");
+    panel.className = "set-pane";
+    panel.setAttribute("aria-label", settingsPage.section);
+
+    const title = document.createElement("h1");
+    title.className = "page-title";
+    title.textContent = settingsPage.section;
+    panel.appendChild(title);
+
+    if (settingsPage.note) {
       const gn = document.createElement("p");
-      gn.className = "set-group-note";
-      gn.textContent = group.note;
-      inner.appendChild(gn);
+      gn.className = "settings-note";
+      gn.textContent = settingsPage.note;
+      panel.appendChild(gn);
     }
-    const start = entries.length;
-    for (const knob of group.knobs) inner.appendChild(buildRow(knob));
-    body.appendChild(inner);
-    g.appendChild(body);
-    wrap.appendChild(g);
 
-    sections.push({ section: g, tab: h, dot, entries: entries.slice(start) });
+    if (settingsPage.id === "voice") {
+      const speaker = document.createElement("section");
+      speaker.className = "set-page-section";
+      const speakerTitle = document.createElement("h2");
+      speakerTitle.className = "set-section-title";
+      speakerTitle.textContent = "Speaker";
+      speaker.append(speakerTitle, buildVolumeSection());
+      panel.appendChild(speaker);
+    }
+
+    const pageStart = entries.length;
+    /** @type {{section: import("./catalog.js").PageSection, entries: Entry[]}[]} */
+    const pageSections = [];
+    for (const pageSection of settingsPage.sections) {
+      const sectionStart = entries.length;
+      panel.appendChild(buildPageSection(pageSection));
+      pageSections.push({ section: pageSection, entries: entries.slice(sectionStart) });
+    }
+    detail.appendChild(panel);
+
+    /** @type {PageUI} */
+    const ui = { panel, row, dot, entries: entries.slice(pageStart) };
+    row.addEventListener("click", () => selectPage(ui));
+    pages.push(ui);
+
+    for (const sectionUI of pageSections) {
+      for (const entry of sectionUI.entries) {
+        const context = `${settingsPage.section} · ${sectionUI.section.title}`;
+        searchTargets.push({
+          entry,
+          page: ui,
+          context,
+          haystack: [
+            settingsPage.section,
+            settingsPage.summary,
+            sectionUI.section.title,
+            sectionUI.section.note || "",
+            entry.knob.label,
+            entry.knob.doc,
+          ].join(" ").toLowerCase(),
+        });
+      }
+    }
   }
 
+  search.addEventListener("input", () => renderSearchResults(search.value, indexCard, searchResults));
+
+  wrap.append(index, detail);
   scroll.appendChild(wrap);
-  page.appendChild(scroll);
+  body.appendChild(scroll);
+  page.appendChild(body);
 
   const bar = document.createElement("div");
   bar.className = "set-bar";
@@ -519,7 +599,7 @@ function build() {
   restartBtn = document.createElement("button");
   restartBtn.className = "set-restart";
   restartBtn.textContent = "Restart robot";
-  restartBtn.title = "Restart the robot to apply saved settings (same as `innate restart`)";
+  restartBtn.title = "Restart the robot to apply saved settings (same as innate restart)";
   restartBtn.addEventListener("click", onRestart);
   statusEl = document.createElement("span");
   bar.appendChild(saveBtn);
@@ -533,10 +613,166 @@ function build() {
   setStatus("Loading current values…");
 }
 
+/**
+ * Linear-style flat section: heading + optional note + preference card.
+ * @param {import("./catalog.js").PageSection} pageSection
+ */
+function buildPageSection(pageSection) {
+  const section = document.createElement("section");
+  section.className = "set-page-section";
+  const title = document.createElement("h2");
+  title.className = "set-section-title";
+  title.textContent = pageSection.title;
+  section.appendChild(title);
+  if (pageSection.note) {
+    const note = document.createElement("p");
+    note.className = "set-section-note";
+    note.textContent = pageSection.note;
+    section.appendChild(note);
+  }
+  section.appendChild(buildGroupCard(pageSection.knobs));
+  return section;
+}
+
+/**
+ * Fill an element with text, wrapping case-insensitive matches of `terms` in
+ * <mark class="set-search-mark">. Uses Text nodes so query characters stay safe.
+ * @param {HTMLElement} el
+ * @param {string} text
+ * @param {string[]} terms  Lowercase search tokens already filtered for emptiness.
+ */
+function setHighlightedText(el, text, terms) {
+  el.replaceChildren();
+  const pattern = terms
+    .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .sort((a, b) => b.length - a.length)
+    .join("|");
+  if (!pattern) {
+    el.textContent = text;
+    return;
+  }
+  const re = new RegExp(pattern, "gi");
+  let last = 0;
+  for (const match of text.matchAll(re)) {
+    const start = match.index ?? 0;
+    if (start > last) el.append(text.slice(last, start));
+    const mark = document.createElement("mark");
+    mark.className = "set-search-mark";
+    mark.textContent = match[0];
+    el.append(mark);
+    last = start + match[0].length;
+  }
+  if (last < text.length) el.append(text.slice(last));
+  if (!el.childNodes.length) el.textContent = text;
+}
+
+/**
+ * Replace the destination index with direct knob matches while searching.
+ * Clicking a result opens the owning destination, then focuses the matching
+ * control without changing its value.
+ */
+function renderSearchResults(
+  /** @type {string} */ query,
+  /** @type {HTMLElement} */ indexCard,
+  /** @type {HTMLElement} */ results,
+) {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const searching = terms.length > 0;
+  indexCard.hidden = searching;
+  results.hidden = !searching;
+  results.replaceChildren();
+  if (!searching) return;
+
+  const matches = searchTargets
+    .filter((target) => terms.every((term) => target.haystack.includes(term)))
+    .slice(0, 20);
+
+  if (!matches.length) {
+    const empty = document.createElement("p");
+    empty.className = "set-search-empty";
+    empty.textContent = "No matching settings";
+    results.appendChild(empty);
+    return;
+  }
+
+  for (const target of matches) {
+    const result = document.createElement("button");
+    result.type = "button";
+    result.className = "set-search-result";
+    const label = document.createElement("span");
+    label.className = "set-search-label";
+    setHighlightedText(label, target.entry.knob.label, terms);
+    const context = document.createElement("span");
+    context.className = "set-search-context";
+    setHighlightedText(context, target.context, terms);
+    result.append(label, context);
+    result.addEventListener("click", () => {
+      selectPage(target.page);
+      requestAnimationFrame(() => {
+        target.entry.row.scrollIntoView({ block: "center", behavior: "smooth" });
+        const control = target.entry.row.querySelector("input, select, textarea, button");
+        if (control instanceof HTMLElement) control.focus({ preventScroll: true });
+        target.entry.row.classList.add("search-hit");
+        target.entry.row.addEventListener(
+          "animationend",
+          () => target.entry.row.classList.remove("search-hit"),
+          { once: true },
+        );
+      });
+    });
+    results.appendChild(result);
+  }
+}
+
+/**
+ * Cluster consecutive knobs that share a `subsection` label so the expanded
+ * card can render Midday/iOS-style subheads without nesting the catalog.
+ * @param {import("./catalog.js").Knob[]} knobs
+ * @returns {{ title: string | null, knobs: import("./catalog.js").Knob[] }[]}
+ */
+function clusterBySubsection(knobs) {
+  /** @type {{ title: string | null, knobs: import("./catalog.js").Knob[] }[]} */
+  const clusters = [];
+  for (const knob of knobs) {
+    const title = knob.subsection || null;
+    const last = clusters[clusters.length - 1];
+    if (last && last.title === title) last.knobs.push(knob);
+    else clusters.push({ title, knobs: [knob] });
+  }
+  return clusters;
+}
+
+/** One bordered card for an expanded section; optional subsection blocks inside. */
+function buildGroupCard(/** @type {import("./catalog.js").Knob[]} */ knobs) {
+  const card = document.createElement("div");
+  card.className = "set-card";
+  const clusters = clusterBySubsection(knobs);
+  const useSubheads = clusters.filter((c) => c.title).length > 1;
+
+  for (const cluster of clusters) {
+    /** @type {HTMLElement} */
+    let host = card;
+    if (useSubheads) {
+      const block = document.createElement("div");
+      block.className = "set-subblock";
+      if (cluster.title) {
+        const subh = document.createElement("div");
+        subh.className = "set-subh";
+        subh.textContent = cluster.title;
+        block.appendChild(subh);
+      }
+      card.appendChild(block);
+      host = block;
+    }
+    for (const knob of cluster.knobs) host.appendChild(buildRow(knob));
+  }
+  return card;
+}
+
 function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
   const row = document.createElement("div");
-  row.className = "set-row";
-  if (knob.type === "list") row.classList.add("set-row-list");
+  row.className = `set-row set-row-${knob.type}`;
+  if (knob.type === "bool") row.classList.add("set-row-toggle");
 
   const info = document.createElement("div");
   info.className = "set-info";
@@ -577,8 +813,35 @@ function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
   else buildScalarControl(ctl, entry);
 
   row.appendChild(ctl);
+  // Whole row activates the control (label, padding, empty control column).
+  // Skip real controls, Restore, and doc links.
+  row.addEventListener("click", (e) => {
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (t.closest("a, button, input, select, textarea, label")) return;
+    activateRowControl(row);
+  });
   entries.push(entry);
   return row;
+}
+
+/** Focus / open / toggle the primary control in a settings row. */
+function activateRowControl(/** @type {HTMLElement} */ row) {
+  const el = row.querySelector(
+    "input.set-num, input.set-text, input[type=checkbox], input[type=range], select.set-text, .set-list input.set-text",
+  );
+  if (!(el instanceof HTMLElement)) return;
+  if (el instanceof HTMLInputElement && el.type === "checkbox") {
+    el.click();
+    return;
+  }
+  el.focus();
+  if (el instanceof HTMLSelectElement) {
+    el.click();
+    return;
+  }
+  if (el instanceof HTMLInputElement && el.type !== "range" && typeof el.select === "function") {
+    el.select();
+  }
 }
 
 /** Checkbox / slider / text / number control (bool, bounded numeric, string, number). */
@@ -587,18 +850,22 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
   const isSlider =
     (knob.type === "int" || knob.type === "float") && knob.slider === true && knob.max !== undefined;
 
+  const main = document.createElement("div");
+  main.className = "set-ctl-main";
+  if (knob.type === "bool") main.classList.add("is-toggle");
+  else if (knob.options || knob.type === "string" || isSlider) main.classList.add("is-wide");
+
+  const row = document.createElement("div");
+  row.className = "set-ctl-row";
+
   if (knob.type === "bool") {
     const input = document.createElement("input");
     input.type = "checkbox";
-    ctl.appendChild(input);
+    row.appendChild(input);
     entry.render = () => {
       input.checked = Boolean(entry.value);
     };
-    input.addEventListener("change", () => {
-      entry.value = input.checked;
-      entry.overridden = true;
-      recompute();
-    });
+    input.addEventListener("change", () => editScalar(entry, input.checked));
   } else if (isSlider) {
     const slider = document.createElement("input");
     slider.type = "range";
@@ -606,7 +873,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     slider.min = String(knob.min ?? 0);
     slider.max = String(knob.max);
     slider.step = String(knob.step ?? (knob.type === "int" ? 1 : 1));
-    ctl.appendChild(slider);
+    row.appendChild(slider);
 
     // "<value> / <max>" — the max is always shown so the ceiling is obvious.
     const read = document.createElement("span");
@@ -616,17 +883,22 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     mx.className = "mx";
     mx.textContent = " / " + knob.max;
     read.append(cur, mx);
-    ctl.appendChild(read);
+    row.appendChild(read);
+    if (knob.unit) {
+      const unit = document.createElement("span");
+      unit.className = "set-unit";
+      unit.textContent = knob.unit;
+      row.appendChild(unit);
+    }
 
     entry.render = () => {
       slider.value = String(entry.value);
       cur.textContent = String(entry.value);
     };
     slider.addEventListener("input", () => {
-      entry.value = Number(slider.value);
-      entry.overridden = true;
-      cur.textContent = String(entry.value);
-      recompute();
+      const value = Number(slider.value);
+      cur.textContent = String(value);
+      editScalar(entry, value);
     });
   } else if (knob.options) {
     const options = knob.options; // capture: the closures below can't re-narrow it
@@ -645,13 +917,13 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     customOpt.value = CUSTOM;
     customOpt.textContent = "Custom…";
     select.appendChild(customOpt);
-    ctl.appendChild(select);
+    row.appendChild(select);
 
     const custom = document.createElement("input");
     custom.type = "text";
     custom.className = "set-text set-custom";
     custom.placeholder = "Paste a voice ID";
-    ctl.appendChild(custom);
+    custom.style.display = "none";
 
     const isStock = () => options.some((o) => o.value === entry.value);
     entry.render = () => {
@@ -669,102 +941,110 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
         custom.focus();
         return;
       }
-      entry.value = select.value;
-      entry.overridden = true;
-      recompute();
+      editScalar(entry, select.value);
     });
     custom.addEventListener("input", () => {
-      entry.value = custom.value;
       // An empty id is never valid (it breaks TTS), so it isn't a real override.
-      entry.overridden = custom.value !== "";
-      recompute();
+      if (custom.value === "") {
+        entry.value = "";
+        entry.overridden = false;
+        recompute();
+      } else {
+        editScalar(entry, custom.value);
+      }
     });
+    main.append(row, custom);
   } else if (knob.type === "string") {
     const input = document.createElement("input");
     input.type = "text";
     input.className = "set-text";
-    ctl.appendChild(input);
+    row.appendChild(input);
     entry.render = () => {
       input.value = String(entry.value);
     };
-    input.addEventListener("input", () => {
-      entry.value = input.value;
-      entry.overridden = true;
-      recompute();
-    });
+    input.addEventListener("input", () => editScalar(entry, input.value));
   } else {
+    // Number field: value + unit share one bordered shell (unit as in-field suffix).
+    const wrap = document.createElement("div");
+    wrap.className = "set-num-wrap";
     const input = document.createElement("input");
     // type=text (not number) so the decimal separator always renders as a dot,
     // regardless of the browser/OS locale; inputmode keeps the mobile numpad.
     input.type = "text";
     input.inputMode = "decimal";
     input.className = "set-num";
-    ctl.appendChild(input);
+    if (knob.min !== undefined && knob.max !== undefined) {
+      input.title = `Built-in default ${knob.default}` + (knob.unit ? ` ${knob.unit}` : "") + ` · range ${knob.min}–${knob.max}`;
+    }
+    wrap.appendChild(input);
+    if (knob.unit) {
+      const unit = document.createElement("span");
+      unit.className = "set-unit";
+      unit.textContent = knob.unit;
+      wrap.appendChild(unit);
+    }
+    row.appendChild(wrap);
+    wrap.addEventListener("click", (e) => {
+      if (e.target !== input) input.focus();
+    });
     entry.render = () => {
       input.value = String(entry.value);
     };
     input.addEventListener("input", () => {
       // Tolerate a comma decimal separator from locale-habit typing.
-      entry.value = Number(input.value.replace(",", "."));
-      entry.overridden = true;
-      recompute();
+      editScalar(entry, Number(input.value.replace(",", ".")));
     });
-
-    if (knob.min !== undefined || knob.max !== undefined) {
-      const err = document.createElement("span");
-      err.className = "set-err";
-      entry.errEl = err;
-      ctl.appendChild(err);
-    }
   }
 
-  const unit = document.createElement("span");
-  unit.className = "set-unit";
-  unit.textContent = knob.unit || "";
-  ctl.appendChild(unit);
+  if ((knob.type === "int" || knob.type === "float") && !isSlider && (knob.min !== undefined || knob.max !== undefined)) {
+    const err = document.createElement("span");
+    err.className = "set-err";
+    entry.errEl = err;
+    main.appendChild(err); // above the field so it doesn't sit under Restore
+  }
 
-  const def = document.createElement("span");
-  def.className = "set-default";
-  def.textContent = defaultLabel(knob);
-  def.title = def.textContent;
-  ctl.appendChild(def);
+  if (!knob.options) main.appendChild(row);
 
-  const reset = document.createElement("button");
-  reset.className = "set-reset";
-  reset.textContent = "reset";
-  reset.addEventListener("click", () => {
-    entry.overridden = false;
-    entry.value = cloneDefault(knob);
-    entry.render();
-    recompute();
-  });
-  ctl.appendChild(reset);
+  // Toggles omit Restore — flip back to the built-in value clears the override.
+  if (knob.type !== "bool") {
+    main.appendChild(
+      buildRestoreButton(knob, () => {
+        entry.overridden = false;
+        entry.value = cloneDefault(knob);
+        entry.render();
+        recompute();
+      }),
+    );
+  }
 
+  ctl.appendChild(main);
   entry.render(); // initialise the control from entry.value (the default at build time)
 }
 
 /** Editable list of text rows for `list` knobs (e.g. extra agent/skill dirs). */
 function buildListControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ entry) {
   const knob = entry.knob;
+  const main = document.createElement("div");
+  main.className = "set-ctl-main";
+
   const list = document.createElement("div");
   list.className = "set-list";
-  ctl.appendChild(list);
+  main.appendChild(list);
 
   const addBtn = document.createElement("button");
   addBtn.className = "set-list-add";
   addBtn.textContent = "+ Add directory";
-  ctl.appendChild(addBtn);
+  main.appendChild(addBtn);
 
-  const meta = document.createElement("div");
-  meta.className = "set-list-meta";
-  const def = document.createElement("span");
-  def.className = "set-default";
-  def.textContent = defaultLabel(knob);
-  const reset = document.createElement("button");
-  reset.className = "set-reset";
-  reset.textContent = "reset";
-  meta.append(def, reset);
-  ctl.appendChild(meta);
+  main.appendChild(
+    buildRestoreButton(knob, () => {
+      entry.overridden = false;
+      entry.value = cloneDefault(knob);
+      entry.render();
+      recompute();
+    }),
+  );
+  ctl.appendChild(main);
 
   // Read the text rows back into the entry; an all-blank list means "no override".
   function commit() {
@@ -804,13 +1084,6 @@ function buildListControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
   };
 
   addBtn.addEventListener("click", () => addItem(""));
-  reset.addEventListener("click", () => {
-    entry.overridden = false;
-    entry.value = cloneDefault(knob);
-    entry.render();
-    recompute();
-  });
-
   entry.render();
 }
 
@@ -834,10 +1107,6 @@ async function load() {
     e.value = e.savedValue = active ? val : cloneDefault(e.knob);
     e.render();
   }
-  // Auto-expand groups that have an override so customized values aren't hidden.
-  for (const s of sections) {
-    if (s.entries.some((e) => e.overridden)) s.section.classList.add("open");
-  }
   recompute();
   setStatus("");
 }
@@ -855,6 +1124,7 @@ async function savePost(/** @type {any} */ payload) {
 }
 
 /** rcl_interfaces/msg/ParameterType. Only the types the catalog can mark `live`. */
+/** @type {Record<string, number>} */
 const PARAM_TYPE = { bool: 1, int: 2, float: 3, string: 4 };
 
 /**
@@ -867,7 +1137,12 @@ const PARAM_TYPE = { bool: 1, int: 2, float: 3, string: 4 };
  * Cleared knobs are pushed too, at their catalog default: reverting an override has to
  * reach the robot as well, or "reset" would only take effect on the next restart.
  *
- * @param {{overridden: boolean, value: any}[]} snapshot
+ * @param {readonly Readonly<{
+ *   overridden: boolean,
+ *   value: any,
+ *   previousSavedOverridden: boolean,
+ *   previousSavedValue: any
+ * }>[] } snapshot
  * @returns {Promise<{applied: number, failed: number, restart: number}>}
  */
 async function applyLive(snapshot) {
@@ -878,8 +1153,9 @@ async function applyLive(snapshot) {
   entries.forEach((e, i) => {
     const knob = e.knob;
     const changed =
-      snapshot[i].overridden !== e.savedWasOverridden ||
-      (snapshot[i].overridden && !valuesEqual(knob, snapshot[i].value, e.savedWasValue));
+      snapshot[i].overridden !== snapshot[i].previousSavedOverridden ||
+      (snapshot[i].overridden
+        && !valuesEqual(knob, snapshot[i].value, snapshot[i].previousSavedValue));
     if (!changed) return;
     if (!knob.live) {
       restart++;
@@ -916,7 +1192,8 @@ async function applyLive(snapshot) {
       });
       // The service resolves even when a node rejects a value, so read each result.
       const results = res?.results || [];
-      results.forEach((r) => (r?.successful === false ? failed++ : applied++));
+      results.forEach((/** @type {{successful?: boolean}} */ r) =>
+        (r?.successful === false ? failed++ : applied++));
       if (!results.length) failed += params.length;
     } catch (err) {
       console.warn(`Live-apply to ${node} failed:`, err);
@@ -933,12 +1210,14 @@ async function onSave() {
   // stamps saved-state from THIS snapshot, not the live entries — otherwise a
   // field edited during the WS round-trip would be mis-marked as saved while
   // the file holds the older value.
-  const snapshot = entries.map((e) => ({ overridden: e.overridden, value: e.value }));
-  // What was saved *before* this write, so applyLive only pushes knobs that moved.
-  entries.forEach((e) => {
-    e.savedWasOverridden = e.savedOverridden;
-    e.savedWasValue = e.savedValue;
-  });
+  const snapshot = Object.freeze(entries.map((e) => Object.freeze({
+    overridden: e.overridden,
+    value: e.knob.type === "list" ? Object.freeze([...e.value]) : e.value,
+    previousSavedOverridden: e.savedOverridden,
+    previousSavedValue: e.knob.type === "list"
+      ? Object.freeze([...e.savedValue])
+      : e.savedValue,
+  })));
   for (const e of entries) {
     if (e.overridden) sets.push({ path: e.knob.path, value: e.value, type: e.knob.type });
     else clears.push(e.knob.path);
@@ -1004,7 +1283,12 @@ export function mount(stageEl) {
   stage = stageEl;
   cleanups = [];
   entries.length = 0;
-  sections.length = 0;
+  pages.length = 0;
+  searchTargets.length = 0;
+  bodyEl = null;
+  searchInput = null;
+  indexCardEl = null;
+  searchResultsEl = null;
   build();
   load();
   return {
@@ -1012,6 +1296,10 @@ export function mount(stageEl) {
       for (const fn of cleanups.splice(0)) fn();
       styleEl?.remove();
       styleEl = null;
+      bodyEl = null;
+      searchInput = null;
+      indexCardEl = null;
+      searchResultsEl = null;
       stage.replaceChildren();
     },
   };

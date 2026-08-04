@@ -77,11 +77,11 @@
 
 /**
  * @typedef {Object} SettingsPage
- * @property {string} id
  * @property {string} icon  Filename under /js/settings/icons/.
  * @property {string} section
  * @property {string} summary
  * @property {string} [note]
+ * @property {boolean} [hasSpeakerVolume]  Inject the live speaker-volume control.
  * @property {PageSection[]} sections
  */
 
@@ -311,7 +311,7 @@ function fromGroup(groupId, overrides = {}) {
  */
 export const SETTINGS_PAGES = [
   {
-    id: "voice",
+    hasSpeakerVolume: true,
     icon: "volume.svg",
     section: "Voice",
     summary: "Speaker volume and robot voice",
@@ -325,7 +325,6 @@ export const SETTINGS_PAGES = [
     ],
   },
   {
-    id: "driving",
     icon: "joystick.svg",
     section: "Driving",
     summary: "Speed, handling, and manual controls",
@@ -339,7 +338,6 @@ export const SETTINGS_PAGES = [
     ],
   },
   {
-    id: "safety-hardware",
     icon: "warning.svg",
     section: "Safety & hardware",
     summary: "Physical limits, battery, and arm",
@@ -351,7 +349,6 @@ export const SETTINGS_PAGES = [
     ],
   },
   {
-    id: "camera",
     icon: "camera.svg",
     section: "Camera",
     summary: "Stream size, rate, and exposure",
@@ -380,7 +377,6 @@ export const SETTINGS_PAGES = [
     ],
   },
   {
-    id: "autonomy",
     icon: "brain.svg",
     section: "Autonomy",
     summary: "Localization, navigation, and learned skills",
@@ -392,7 +388,6 @@ export const SETTINGS_PAGES = [
     ],
   },
   {
-    id: "brain-client",
     icon: "cloud.svg",
     section: "Brain client",
     summary: "Sensing uplink, diagnostics, and AI models",

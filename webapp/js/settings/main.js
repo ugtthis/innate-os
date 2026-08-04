@@ -494,7 +494,7 @@ function build() {
       panel.appendChild(gn);
     }
 
-    if (settingsPage.id === "voice") {
+    if (settingsPage.hasSpeakerVolume) {
       const speaker = document.createElement("section");
       speaker.className = "set-page-section";
       const speakerTitle = document.createElement("h2");

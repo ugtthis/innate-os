@@ -87,6 +87,14 @@ function setStatus(/** @type {string} */ msg, /** @type {string} */ cls = "muted
   statusEl.className = "set-status " + cls;
 }
 
+/** @param {string} tag @param {string} className @param {string} [text] */
+function textEl(tag, className, text) {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
 /** Short built-in value for the restore link / tooltip. */
 function defaultShort(/** @type {import("./catalog.js").Knob} */ knob) {
   if (knob.type === "bool") return knob.default ? "on" : "off";
@@ -224,25 +232,17 @@ function clampVolume(/** @type {number} */ value) {
  * of the range so the bottom of the slider stays audible (see apply_alsa_volume).
  */
 function buildVolumeSection() {
-  const section = document.createElement("section");
-  section.className = "set-live";
+  const section = textEl("section", "set-live");
 
-  const row = document.createElement("div");
-  row.className = "set-row";
+  const row = textEl("div", "set-row");
 
-  const info = document.createElement("div");
-  info.className = "set-info";
-  const label = document.createElement("span");
-  label.className = "set-label";
-  label.textContent = "Speaker volume";
-  const doc = document.createElement("span");
-  doc.className = "set-doc";
-  doc.textContent = "The robot's voice volume. Applies immediately — no restart.";
+  const info = textEl("div", "set-info");
+  const label = textEl("span", "set-label", "Speaker volume");
+  const doc = textEl("span", "set-doc", "The robot's voice volume. Applies immediately — no restart.");
   info.append(label, doc);
   row.appendChild(info);
 
-  const ctl = document.createElement("div");
-  ctl.className = "set-ctl";
+  const ctl = textEl("div", "set-ctl");
 
   const slider = document.createElement("input");
   slider.type = "range";
@@ -256,18 +256,14 @@ function buildVolumeSection() {
   slider.disabled = true;
   ctl.appendChild(slider);
 
-  const read = document.createElement("span");
-  read.className = "set-slider-read";
+  const read = textEl("span", "set-slider-read");
   const cur = document.createElement("span");
   cur.textContent = "—"; // nothing until /robot/info reports the live volume
-  const mx = document.createElement("span");
-  mx.className = "mx";
-  mx.textContent = "";
+  const mx = textEl("span", "mx");
   read.append(cur, mx);
   ctl.appendChild(read);
 
-  const status = document.createElement("span");
-  status.className = "set-live-status set-status muted";
+  const status = textEl("span", "set-live-status set-status muted");
   ctl.appendChild(status);
 
   row.appendChild(ctl);
@@ -383,31 +379,22 @@ function build() {
   styleEl.textContent = SETTINGS_STYLE;
   document.head.appendChild(styleEl);
 
-  const page = document.createElement("div");
-  page.className = "settings-page";
+  const page = textEl("div", "settings-page");
 
-  const body = document.createElement("div");
-  body.className = "settings-body";
+  const body = textEl("div", "settings-body");
   bodyEl = body;
 
-  const scroll = document.createElement("div");
-  scroll.className = "settings-scroll";
+  const scroll = textEl("div", "settings-scroll");
 
-  const wrap = document.createElement("div");
-  wrap.className = "settings-wrap";
+  const wrap = textEl("div", "settings-wrap");
 
   // —— Index: six task-oriented destinations + direct knob search ——
-  const index = document.createElement("div");
-  index.className = "set-index";
+  const index = textEl("div", "set-index");
 
-  const indexTitle = document.createElement("h1");
-  indexTitle.className = "page-title";
-  indexTitle.textContent = "Preferences";
+  const indexTitle = textEl("h1", "page-title", "Preferences");
   index.appendChild(indexTitle);
 
-  const indexNote = document.createElement("p");
-  indexNote.className = "settings-note";
-  indexNote.textContent = "Tune how the robot drives, sees, and talks. Changes save to settings.yaml.";
+  const indexNote = textEl("p", "settings-note", "Tune how the robot drives, sees, and talks. Changes save to settings.yaml.");
   index.appendChild(indexNote);
 
   const search = document.createElement("input");
@@ -417,12 +404,10 @@ function build() {
   search.setAttribute("aria-label", "Search settings");
   index.appendChild(search);
 
-  const indexCard = document.createElement("div");
-  indexCard.className = "set-index-card";
+  const indexCard = textEl("div", "set-index-card");
   index.appendChild(indexCard);
 
-  const searchResults = document.createElement("div");
-  searchResults.className = "set-search-results";
+  const searchResults = textEl("div", "set-search-results");
   searchResults.hidden = true;
   index.appendChild(searchResults);
 
@@ -437,8 +422,7 @@ function build() {
   };
 
   // —— Detail: back + one active pane ——
-  const detail = document.createElement("div");
-  detail.className = "set-detail";
+  const detail = textEl("div", "set-detail");
 
   const back = document.createElement("button");
   back.type = "button";
@@ -453,53 +437,38 @@ function build() {
     row.type = "button";
     row.className = "set-index-row";
 
-    const icon = document.createElement("span");
-    icon.className = "set-index-icon";
+    const icon = textEl("span", "set-index-icon");
     icon.style.setProperty(
       "--icon-url",
       `url("/js/settings/icons/${settingsPage.icon}")`,
     );
 
-    const text = document.createElement("span");
-    text.className = "set-index-text";
-    const label = document.createElement("span");
-    label.className = "set-index-label";
-    label.textContent = settingsPage.section;
-    const summary = document.createElement("span");
-    summary.className = "set-index-summary";
-    summary.textContent = settingsPage.summary;
+    const text = textEl("span", "set-index-text");
+    const label = textEl("span", "set-index-label", settingsPage.section);
+    const summary = textEl("span", "set-index-summary", settingsPage.summary);
     text.append(label, summary);
 
-    const dot = document.createElement("span");
-    dot.className = "set-index-dot";
+    const dot = textEl("span", "set-index-dot");
     dot.title = "Unsaved changes in this section";
 
     row.append(icon, text, dot);
     row.insertAdjacentHTML("beforeend", INDEX_CHEV);
     indexCard.appendChild(row);
 
-    const panel = document.createElement("section");
-    panel.className = "set-pane";
+    const panel = textEl("section", "set-pane");
     panel.setAttribute("aria-label", settingsPage.section);
 
-    const title = document.createElement("h1");
-    title.className = "page-title";
-    title.textContent = settingsPage.section;
+    const title = textEl("h1", "page-title", settingsPage.section);
     panel.appendChild(title);
 
     if (settingsPage.note) {
-      const gn = document.createElement("p");
-      gn.className = "settings-note";
-      gn.textContent = settingsPage.note;
+      const gn = textEl("p", "settings-note", settingsPage.note);
       panel.appendChild(gn);
     }
 
     if (settingsPage.hasSpeakerVolume) {
-      const speaker = document.createElement("section");
-      speaker.className = "set-page-section";
-      const speakerTitle = document.createElement("h2");
-      speakerTitle.className = "set-section-title";
-      speakerTitle.textContent = "Speaker";
+      const speaker = textEl("section", "set-page-section");
+      const speakerTitle = textEl("h2", "set-section-title", "Speaker");
       speaker.append(speakerTitle, buildVolumeSection());
       panel.appendChild(speaker);
     }
@@ -541,8 +510,7 @@ function build() {
   body.appendChild(scroll);
   page.appendChild(body);
 
-  const bar = document.createElement("div");
-  bar.className = "set-bar";
+  const bar = textEl("div", "set-bar");
   saveBtn = document.createElement("button");
   saveBtn.className = "set-save";
   saveBtn.textContent = "Save";
@@ -577,16 +545,11 @@ function build() {
  * @param {import("./catalog.js").PageSection} pageSection
  */
 function buildPageSection(pageSection) {
-  const section = document.createElement("section");
-  section.className = "set-page-section";
-  const title = document.createElement("h2");
-  title.className = "set-section-title";
-  title.textContent = pageSection.title;
+  const section = textEl("section", "set-page-section");
+  const title = textEl("h2", "set-section-title", pageSection.title);
   section.appendChild(title);
   if (pageSection.note) {
-    const note = document.createElement("p");
-    note.className = "set-section-note";
-    note.textContent = pageSection.note;
+    const note = textEl("p", "set-section-note", pageSection.note);
     section.appendChild(note);
   }
   section.appendChild(buildGroupCard(pageSection.knobs));
@@ -611,9 +574,7 @@ function setHighlightedText(el, text, terms) {
   for (const match of text.matchAll(re)) {
     const start = match.index ?? 0;
     if (start > last) el.append(text.slice(last, start));
-    const mark = document.createElement("mark");
-    mark.className = "set-search-mark";
-    mark.textContent = match[0];
+    const mark = textEl("mark", "set-search-mark", match[0]);
     el.append(mark);
     last = start + match[0].length;
   }
@@ -642,9 +603,7 @@ function renderSearchResults(
     .slice(0, 20);
 
   if (!matches.length) {
-    const empty = document.createElement("p");
-    empty.className = "set-search-empty";
-    empty.textContent = "No matching settings";
+    const empty = textEl("p", "set-search-empty", "No matching settings");
     results.appendChild(empty);
     return;
   }
@@ -653,11 +612,9 @@ function renderSearchResults(
     const result = document.createElement("button");
     result.type = "button";
     result.className = "set-search-result";
-    const label = document.createElement("span");
-    label.className = "set-search-label";
+    const label = textEl("span", "set-search-label");
     setHighlightedText(label, target.entry.knob.label, terms);
-    const context = document.createElement("span");
-    context.className = "set-search-context";
+    const context = textEl("span", "set-search-context");
     setHighlightedText(context, target.context, terms);
     result.append(label, context);
     result.addEventListener("click", () => {
@@ -698,8 +655,7 @@ function clusterBySubsection(knobs) {
 
 /** One bordered card for an expanded section; optional subsection blocks inside. */
 function buildGroupCard(/** @type {import("./catalog.js").Knob[]} */ knobs) {
-  const card = document.createElement("div");
-  card.className = "set-card";
+  const card = textEl("div", "set-card");
   const clusters = clusterBySubsection(knobs);
   const useSubheads = clusters.filter((c) => c.title).length > 1;
 
@@ -707,12 +663,9 @@ function buildGroupCard(/** @type {import("./catalog.js").Knob[]} */ knobs) {
     /** @type {HTMLElement} */
     let host = card;
     if (useSubheads) {
-      const block = document.createElement("div");
-      block.className = "set-subblock";
+      const block = textEl("div", "set-subblock");
       if (cluster.title) {
-        const subh = document.createElement("div");
-        subh.className = "set-subh";
-        subh.textContent = cluster.title;
+        const subh = textEl("div", "set-subh", cluster.title);
         block.appendChild(subh);
       }
       card.appendChild(block);
@@ -724,18 +677,12 @@ function buildGroupCard(/** @type {import("./catalog.js").Knob[]} */ knobs) {
 }
 
 function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
-  const row = document.createElement("div");
-  row.className = "set-row";
+  const row = textEl("div", "set-row");
   if (knob.type === "bool") row.classList.add("set-row-toggle");
 
-  const info = document.createElement("div");
-  info.className = "set-info";
-  const label = document.createElement("span");
-  label.className = "set-label";
-  label.textContent = knob.label;
-  const doc = document.createElement("span");
-  doc.className = "set-doc";
-  doc.textContent = knob.doc;
+  const info = textEl("div", "set-info");
+  const label = textEl("span", "set-label", knob.label);
+  const doc = textEl("span", "set-doc", knob.doc);
   if (knob.docHref) {
     doc.append(" ");
     const link = document.createElement("a");
@@ -749,8 +696,7 @@ function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
   info.append(label, doc);
   row.appendChild(info);
 
-  const ctl = document.createElement("div");
-  ctl.className = "set-ctl";
+  const ctl = textEl("div", "set-ctl");
 
   /** @type {Entry} */
   const entry = {
@@ -803,13 +749,11 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
   const isSlider =
     (knob.type === "int" || knob.type === "float") && knob.slider === true && knob.max !== undefined;
 
-  const main = document.createElement("div");
-  main.className = "set-ctl-main";
+  const main = textEl("div", "set-ctl-main");
   if (knob.type === "bool") main.classList.add("is-toggle");
   else if (knob.options || knob.type === "string" || isSlider) main.classList.add("is-wide");
 
-  const row = document.createElement("div");
-  row.className = "set-ctl-row";
+  const row = textEl("div", "set-ctl-row");
 
   if (knob.type === "bool") {
     const input = document.createElement("input");
@@ -829,18 +773,13 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     row.appendChild(slider);
 
     // "<value> / <max>" — the max is always shown so the ceiling is obvious.
-    const read = document.createElement("span");
-    read.className = "set-slider-read";
+    const read = textEl("span", "set-slider-read");
     const cur = document.createElement("span");
-    const mx = document.createElement("span");
-    mx.className = "mx";
-    mx.textContent = " / " + knob.max;
+    const mx = textEl("span", "mx", " / " + knob.max);
     read.append(cur, mx);
     row.appendChild(read);
     if (knob.unit) {
-      const unit = document.createElement("span");
-      unit.className = "set-unit";
-      unit.textContent = knob.unit;
+      const unit = textEl("span", "set-unit", knob.unit);
       row.appendChild(unit);
     }
 
@@ -918,8 +857,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     input.addEventListener("input", () => editScalar(entry, input.value));
   } else {
     // Number field: value + unit share one bordered shell (unit as in-field suffix).
-    const wrap = document.createElement("div");
-    wrap.className = "set-num-wrap";
+    const wrap = textEl("div", "set-num-wrap");
     const input = document.createElement("input");
     // type=text (not number) so the decimal separator always renders as a dot,
     // regardless of the browser/OS locale; inputmode keeps the mobile numpad.
@@ -931,9 +869,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     }
     wrap.appendChild(input);
     if (knob.unit) {
-      const unit = document.createElement("span");
-      unit.className = "set-unit";
-      unit.textContent = knob.unit;
+      const unit = textEl("span", "set-unit", knob.unit);
       wrap.appendChild(unit);
     }
     row.appendChild(wrap);
@@ -950,8 +886,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
   }
 
   if ((knob.type === "int" || knob.type === "float") && !isSlider && (knob.min !== undefined || knob.max !== undefined)) {
-    const err = document.createElement("span");
-    err.className = "set-err";
+    const err = textEl("span", "set-err");
     entry.errEl = err;
     main.appendChild(err); // above the field so it doesn't sit under Restore
   }

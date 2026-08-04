@@ -63,13 +63,6 @@ const searchTargets = [];
 /** Page shell; toggles `.is-detail` for the index → detail drill-in. */
 /** @type {HTMLElement | null} */
 let bodyEl = null;
-/** Index search field; cleared when returning from a detail page. */
-/** @type {HTMLInputElement | null} */
-let searchInput = null;
-/** @type {HTMLElement | null} */
-let indexCardEl = null;
-/** @type {HTMLElement | null} */
-let searchResultsEl = null;
 
 // Created fresh in build() each mount, so re-mounting never double-binds their
 // click handlers.
@@ -385,24 +378,6 @@ function selectPage(/** @type {PageUI} */ ui) {
   bodyEl?.classList.add("is-detail");
 }
 
-/** Clear search so returning to Preferences shows the destination index again. */
-function clearSearch() {
-  if (!searchInput || !indexCardEl || !searchResultsEl) return;
-  if (!searchInput.value) return;
-  searchInput.value = "";
-  renderSearchResults("", indexCardEl, searchResultsEl);
-}
-
-/** Return to the clustered index. */
-function showIndex() {
-  clearSearch();
-  bodyEl?.classList.remove("is-detail");
-  for (const page of pages) {
-    page.panel.classList.remove("active");
-    page.row.removeAttribute("aria-current");
-  }
-}
-
 function build() {
   styleEl = document.createElement("style");
   styleEl.textContent = SETTINGS_STYLE;
@@ -440,19 +415,26 @@ function build() {
   search.className = "set-search";
   search.placeholder = "Search settings";
   search.setAttribute("aria-label", "Search settings");
-  searchInput = search;
   index.appendChild(search);
 
   const indexCard = document.createElement("div");
   indexCard.className = "set-index-card";
-  indexCardEl = indexCard;
   index.appendChild(indexCard);
 
   const searchResults = document.createElement("div");
   searchResults.className = "set-search-results";
   searchResults.hidden = true;
-  searchResultsEl = searchResults;
   index.appendChild(searchResults);
+
+  const returnToIndex = () => {
+    search.value = "";
+    renderSearchResults("", indexCard, searchResults);
+    bodyEl?.classList.remove("is-detail");
+    for (const page of pages) {
+      page.panel.classList.remove("active");
+      page.row.removeAttribute("aria-current");
+    }
+  };
 
   // —— Detail: back + one active pane ——
   const detail = document.createElement("div");
@@ -463,7 +445,7 @@ function build() {
   back.className = "set-back";
   back.innerHTML =
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15,6 9,12 15,18"/></svg><span>Preferences</span>';
-  back.addEventListener("click", showIndex);
+  back.addEventListener("click", returnToIndex);
   detail.appendChild(back);
 
   for (const settingsPage of SETTINGS_PAGES) {
@@ -522,24 +504,18 @@ function build() {
       panel.appendChild(speaker);
     }
 
-    const pageStart = entries.length;
-    /** @type {{section: import("./catalog.js").PageSection, entries: Entry[]}[]} */
-    const pageSections = [];
-    for (const pageSection of settingsPage.sections) {
-      const sectionStart = entries.length;
-      panel.appendChild(buildPageSection(pageSection));
-      pageSections.push({ section: pageSection, entries: entries.slice(sectionStart) });
-    }
-    detail.appendChild(panel);
-
     /** @type {PageUI} */
-    const ui = { panel, row, dot, entries: entries.slice(pageStart) };
+    const ui = { panel, row, dot, entries: [] };
     row.addEventListener("click", () => selectPage(ui));
     pages.push(ui);
 
-    for (const sectionUI of pageSections) {
-      for (const entry of sectionUI.entries) {
-        const context = `${settingsPage.section} · ${sectionUI.section.title}`;
+    for (const pageSection of settingsPage.sections) {
+      const sectionStart = entries.length;
+      panel.appendChild(buildPageSection(pageSection));
+      const sectionEntries = entries.slice(sectionStart);
+      ui.entries.push(...sectionEntries);
+      const context = `${settingsPage.section} · ${pageSection.title}`;
+      for (const entry of sectionEntries) {
         searchTargets.push({
           entry,
           page: ui,
@@ -547,14 +523,15 @@ function build() {
           haystack: [
             settingsPage.section,
             settingsPage.summary,
-            sectionUI.section.title,
-            sectionUI.section.note || "",
+            pageSection.title,
+            pageSection.note || "",
             entry.knob.label,
             entry.knob.doc,
           ].join(" ").toLowerCase(),
         });
       }
     }
+    detail.appendChild(panel);
   }
 
   search.addEventListener("input", () => renderSearchResults(search.value, indexCard, searchResults));
@@ -1197,9 +1174,6 @@ export function mount(stageEl) {
   pages.length = 0;
   searchTargets.length = 0;
   bodyEl = null;
-  searchInput = null;
-  indexCardEl = null;
-  searchResultsEl = null;
   build();
   load();
   return {
@@ -1208,9 +1182,6 @@ export function mount(stageEl) {
       styleEl?.remove();
       styleEl = null;
       bodyEl = null;
-      searchInput = null;
-      indexCardEl = null;
-      searchResultsEl = null;
       stage.replaceChildren();
     },
   };

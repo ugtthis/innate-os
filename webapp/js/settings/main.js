@@ -94,27 +94,12 @@ function setStatus(/** @type {string} */ msg, /** @type {string} */ cls = "muted
   statusEl.className = "set-status " + cls;
 }
 
-/** Value equality that handles list knobs (arrays compared by content). */
-function valuesEqual(/** @type {import("./catalog.js").Knob} */ knob, /** @type {any} */ a, /** @type {any} */ b) {
-  if (knob.type === "list") return JSON.stringify(a) === JSON.stringify(b);
-  return a === b;
-}
-
-/** A fresh copy of a knob's default (list defaults must not share the catalog array). */
-function cloneDefault(/** @type {import("./catalog.js").Knob} */ knob) {
-  return knob.type === "list" ? /** @type {string[]} */ (knob.default).slice() : knob.default;
-}
-
 /** Short built-in value for the restore link / tooltip. */
 function defaultShort(/** @type {import("./catalog.js").Knob} */ knob) {
   if (knob.type === "bool") return knob.default ? "on" : "off";
   if (knob.options) {
     const opt = knob.options.find((o) => o.value === knob.default);
     if (opt) return opt.label;
-  }
-  if (knob.type === "list") {
-    const arr = /** @type {string[]} */ (knob.default);
-    return arr.length ? arr.join(", ") : "empty";
   }
   return String(knob.default) + (knob.unit ? " " + knob.unit : "");
 }
@@ -143,7 +128,6 @@ function buildRestoreButton(/** @type {import("./catalog.js").Knob} */ knob, /**
 function coerceLoaded(/** @type {import("./catalog.js").Knob} */ knob, /** @type {any} */ v) {
   if (knob.type === "bool") return Boolean(v);
   if (knob.type === "int" || knob.type === "float") return Number(v);
-  if (knob.type === "list") return Array.isArray(v) ? v.map(String) : [];
   return String(v);
 }
 
@@ -168,12 +152,12 @@ function boundsError(/** @type {Entry} */ e) {
 /** Has this entry changed since the last save? */
 function isDirty(/** @type {Entry} */ e) {
   if (e.overridden !== e.savedOverridden) return true;
-  return e.overridden && !valuesEqual(e.knob, e.value, e.savedValue);
+  return e.overridden && e.value !== e.savedValue;
 }
 
 /** True when the form value matches the built-in default (restore would be a no-op). */
 function isAtDefault(/** @type {Entry} */ e) {
-  return valuesEqual(e.knob, e.value, e.knob.default);
+  return e.value === e.knob.default;
 }
 
 /** Mark overridden from the current value — at default means no override. */
@@ -225,7 +209,7 @@ function recompute() {
 function resetAll() {
   for (const e of entries) {
     e.overridden = false;
-    e.value = cloneDefault(e.knob);
+    e.value = e.knob.default;
     e.render();
   }
   recompute();
@@ -802,15 +786,14 @@ function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
   const entry = {
     knob,
     overridden: false,
-    value: cloneDefault(knob),
+    value: knob.default,
     savedOverridden: false,
-    savedValue: cloneDefault(knob),
+    savedValue: knob.default,
     render: () => {},
     row,
   };
 
-  if (knob.type === "list") buildListControl(ctl, entry);
-  else buildScalarControl(ctl, entry);
+  buildScalarControl(ctl, entry);
 
   row.appendChild(ctl);
   // Whole row activates the control (label, padding, empty control column).
@@ -827,7 +810,7 @@ function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
 /** Focus / open / toggle the primary control in a settings row. */
 function activateRowControl(/** @type {HTMLElement} */ row) {
   const el = row.querySelector(
-    "input.set-num, input.set-text, input[type=checkbox], input[type=range], select.set-text, .set-list input.set-text",
+    "input.set-num, input.set-text, input[type=checkbox], input[type=range], select.set-text",
   );
   if (!(el instanceof HTMLElement)) return;
   if (el instanceof HTMLInputElement && el.type === "checkbox") {
@@ -904,7 +887,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     const options = knob.options; // capture: the closures below can't re-narrow it
     const CUSTOM = "__custom__";
     const select = document.createElement("select");
-    select.className = "set-text set-select";
+    select.className = "set-text";
     for (const opt of options) {
       const o = document.createElement("option");
       o.value = opt.value;
@@ -921,7 +904,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
 
     const custom = document.createElement("input");
     custom.type = "text";
-    custom.className = "set-text set-custom";
+    custom.className = "set-text";
     custom.placeholder = "Paste a voice ID";
     custom.style.display = "none";
 
@@ -1010,7 +993,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     main.appendChild(
       buildRestoreButton(knob, () => {
         entry.overridden = false;
-        entry.value = cloneDefault(knob);
+        entry.value = knob.default;
         entry.render();
         recompute();
       }),
@@ -1019,72 +1002,6 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
 
   ctl.appendChild(main);
   entry.render(); // initialise the control from entry.value (the default at build time)
-}
-
-/** Editable list of text rows for `list` knobs (e.g. extra agent/skill dirs). */
-function buildListControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ entry) {
-  const knob = entry.knob;
-  const main = document.createElement("div");
-  main.className = "set-ctl-main";
-
-  const list = document.createElement("div");
-  list.className = "set-list";
-  main.appendChild(list);
-
-  const addBtn = document.createElement("button");
-  addBtn.className = "set-list-add";
-  addBtn.textContent = "+ Add directory";
-  main.appendChild(addBtn);
-
-  main.appendChild(
-    buildRestoreButton(knob, () => {
-      entry.overridden = false;
-      entry.value = cloneDefault(knob);
-      entry.render();
-      recompute();
-    }),
-  );
-  ctl.appendChild(main);
-
-  // Read the text rows back into the entry; an all-blank list means "no override".
-  function commit() {
-    const vals = Array.from(list.querySelectorAll("input"))
-      .map((i) => /** @type {HTMLInputElement} */ (i).value.trim())
-      .filter(Boolean);
-    entry.value = vals;
-    entry.overridden = vals.length > 0;
-    recompute();
-  }
-
-  function addItem(/** @type {string} */ value) {
-    const item = document.createElement("div");
-    item.className = "set-list-item";
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "set-text";
-    input.placeholder = "/absolute/path";
-    input.value = value;
-    input.addEventListener("input", commit);
-    const rm = document.createElement("button");
-    rm.className = "set-list-rm";
-    rm.textContent = "✕";
-    rm.title = "Remove";
-    rm.addEventListener("click", () => {
-      item.remove();
-      commit();
-    });
-    item.append(input, rm);
-    list.appendChild(item);
-  }
-
-  entry.render = () => {
-    list.textContent = "";
-    const arr = Array.isArray(entry.value) ? entry.value : [];
-    for (const v of arr) addItem(String(v));
-  };
-
-  addBtn.addEventListener("click", () => addItem(""));
-  entry.render();
 }
 
 async function load() {
@@ -1101,10 +1018,8 @@ async function load() {
     const v = lookup(overrides, e.knob.path);
     if (v === undefined) continue;
     const val = coerceLoaded(e.knob, v);
-    // An on-disk empty list is no real override; fall back to the default state.
-    const active = e.knob.type === "list" ? val.length > 0 : true;
-    e.overridden = e.savedOverridden = active;
-    e.value = e.savedValue = active ? val : cloneDefault(e.knob);
+    e.overridden = e.savedOverridden = true;
+    e.value = e.savedValue = val;
     e.render();
   }
   recompute();
@@ -1155,7 +1070,7 @@ async function applyLive(snapshot) {
     const changed =
       snapshot[i].overridden !== snapshot[i].previousSavedOverridden ||
       (snapshot[i].overridden
-        && !valuesEqual(knob, snapshot[i].value, snapshot[i].previousSavedValue));
+        && snapshot[i].value !== snapshot[i].previousSavedValue);
     if (!changed) return;
     if (!knob.live) {
       restart++;
@@ -1212,11 +1127,9 @@ async function onSave() {
   // the file holds the older value.
   const snapshot = Object.freeze(entries.map((e) => Object.freeze({
     overridden: e.overridden,
-    value: e.knob.type === "list" ? Object.freeze([...e.value]) : e.value,
+    value: e.value,
     previousSavedOverridden: e.savedOverridden,
-    previousSavedValue: e.knob.type === "list"
-      ? Object.freeze([...e.savedValue])
-      : e.savedValue,
+    previousSavedValue: e.savedValue,
   })));
   for (const e of entries) {
     if (e.overridden) sets.push({ path: e.knob.path, value: e.value, type: e.knob.type });

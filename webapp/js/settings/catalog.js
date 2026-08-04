@@ -34,8 +34,8 @@
  * @property {string} id  Stable id referenced by SETTINGS_PAGES.
  * @property {string[]} path  Full ROS param path in settings.yaml.
  * @property {string} label
- * @property {number|boolean|string|string[]} default
- * @property {"float"|"int"|"bool"|"string"|"list"} type
+ * @property {number|boolean|string} default
+ * @property {"float"|"int"|"bool"|"string"} type
  * @property {string} [unit]
  * @property {string} doc
  * @property {string} [docHref]      Optional URL rendered as a link after the doc text.

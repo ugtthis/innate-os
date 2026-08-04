@@ -71,7 +71,6 @@
 
 /**
  * @typedef {Object} PageSection
- * @property {string} id
  * @property {string} title
  * @property {string} [note]
  * @property {Knob[]} knobs
@@ -102,7 +101,7 @@ const VOICE_OPTIONS = [
 ];
 
 /** @type {Group[]} */
-export const CATALOG = [
+const CATALOG = [
   {
     id: "driving-speed",
     section: "Driving speed",
@@ -286,14 +285,13 @@ function knobs(/** @type {string[]} */ ...ids) {
 /**
  * Page section that includes every knob from a CATALOG group.
  * @param {string} groupId
- * @param {{id?: string, title?: string, note?: string}} [overrides]
+ * @param {{title?: string, note?: string}} [overrides]
  * @returns {PageSection}
  */
 function fromGroup(groupId, overrides = {}) {
   const group = CATALOG.find((candidate) => candidate.id === groupId);
   if (!group) throw new Error(`Unknown settings catalog group: ${groupId}`);
   return {
-    id: overrides.id || groupId,
     title: overrides.title || group.section,
     note: overrides.note === undefined ? group.note : overrides.note,
     knobs: group.knobs,
@@ -315,7 +313,6 @@ export const SETTINGS_PAGES = [
     note: "Adjust how loud the robot speaks and choose its voice.",
     sections: [
       {
-        id: "voice-speech",
         title: "Robot voice",
         note: "The TTS voice drives both chat-TTS and realtime voice.",
         knobs: knobs("cartesia_voice_id"),
@@ -356,7 +353,6 @@ export const SETTINGS_PAGES = [
     note: "Physical main camera (hardware only).",
     sections: [
       {
-        id: "camera-stream",
         title: "Stream",
         knobs: knobs(
           "main_camera_driver-publish_left_width",
@@ -366,7 +362,6 @@ export const SETTINGS_PAGES = [
         ),
       },
       {
-        id: "camera-exposure",
         title: "Exposure",
         knobs: knobs(
           "main_camera_driver-auto_exposure_mode",
@@ -399,7 +394,6 @@ export const SETTINGS_PAGES = [
     note: "Tune what the brain client sends to the Innate agent, plus realtime speech model selection.",
     sections: [
       {
-        id: "brain-runtime",
         title: "Sensing",
         note: "What the brain client sends to the Innate agent. The model fields are also set on the realtime voice loop below — change both so the chat-TTS and realtime-voice paths stay in sync.",
         knobs: knobs(
@@ -411,7 +405,6 @@ export const SETTINGS_PAGES = [
         ),
       },
       {
-        id: "agent-models",
         title: "Diagnostics & models",
         note: "Brain client. The model fields are also set on the realtime voice loop below — change both so the chat-TTS and realtime-voice paths stay in sync.",
         knobs: knobs(
@@ -421,7 +414,6 @@ export const SETTINGS_PAGES = [
         ),
       },
       {
-        id: "speech-models",
         title: "Speech models",
         note: "Keep these values in sync with the matching brain-client model fields above.",
         knobs: knobs(

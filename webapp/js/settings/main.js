@@ -379,7 +379,6 @@ function selectPage(/** @type {PageUI} */ ui) {
   for (const page of pages) {
     const on = page === ui;
     page.panel.classList.toggle("active", on);
-    page.row.classList.toggle("active", on);
     if (on) page.row.setAttribute("aria-current", "page");
     else page.row.removeAttribute("aria-current");
   }
@@ -400,7 +399,6 @@ function showIndex() {
   bodyEl?.classList.remove("is-detail");
   for (const page of pages) {
     page.panel.classList.remove("active");
-    page.row.classList.remove("active");
     page.row.removeAttribute("aria-current");
   }
 }
@@ -755,7 +753,7 @@ function buildGroupCard(/** @type {import("./catalog.js").Knob[]} */ knobs) {
 
 function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
   const row = document.createElement("div");
-  row.className = `set-row set-row-${knob.type}`;
+  row.className = "set-row";
   if (knob.type === "bool") row.classList.add("set-row-toggle");
 
   const info = document.createElement("div");

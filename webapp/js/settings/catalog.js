@@ -65,7 +65,6 @@
  * @typedef {Object} Group
  * @property {string} id
  * @property {string} section  Default title when documenting the group.
- * @property {string} [summary]
  * @property {string} [note]
  * @property {Knob[]} knobs
  */
@@ -74,7 +73,6 @@
  * @typedef {Object} PageSection
  * @property {string} id
  * @property {string} title
- * @property {string} [summary]
  * @property {string} [note]
  * @property {Knob[]} knobs
  */
@@ -108,7 +106,6 @@ export const CATALOG = [
   {
     id: "driving-speed",
     section: "Driving speed",
-    summary: "Manual and autonomous speed caps",
     note: "Manual (teleop) and autonomous (nav) are capped independently. Neither is the hard ceiling — the safety clamp below is.",
     knobs: [
       { id: "motion_control-max_speed", path: ["/**", P, "motion_control", "max_speed"], label: "Manual max speed", default: 0.4, type: "float", unit: "m/s", doc: "Top translational speed for teleop / manual driving", min: 0.05, max: 2, live: "/mars_app", subsection: "Manual" },
@@ -120,7 +117,6 @@ export const CATALOG = [
   {
     id: "drive-feel",
     section: "Drive feel",
-    summary: "Acceleration, lag, and stop behavior",
     note: "How quickly the robot approaches the caps above — app / webapp joystick only; the USB gamepad has its own smoother. All apply immediately except the tick rate. The jerk limits are derived from these, so there is nothing to keep consistent by hand.",
     knobs: [
       { id: "mars_app-motion_control-max_acceleration", path: ["mars_app", P, "motion_control", "max_acceleration"], label: "Linear acceleration", default: 0.2, type: "float", unit: "m/s²", doc: "How hard it speeds up", min: 0.05, max: 5, live: "/mars_app", subsection: "Linear" },
@@ -137,7 +133,6 @@ export const CATALOG = [
   {
     id: "heading-hold",
     section: "Heading hold",
-    summary: "Stay straight while driving",
     note: "Resists being turned off-course while driving straight. Does not restore heading lost earlier — you correct your own overshoot.",
     knobs: [
       { id: "mars_app-heading_hold-gain", path: ["mars_app", P, "heading_hold", "gain"], label: "Gain", default: 5, type: "float", doc: "Correction per unit of heading error. 0 disables the loop", live: "/mars_app", subsection: "Correction" },
@@ -152,7 +147,6 @@ export const CATALOG = [
   {
     id: "mad-mars-mode",
     section: "Mad Mars mode",
-    summary: "Aggressive acceleration overrides",
     note: "Mad Mars is the one speed mode whose accelerations are stated outright rather than scaled from the values above — it wants more linear and less angular than a single multiplier can give.",
     knobs: [
       { id: "mars_app-mad-max_acceleration", path: ["mars_app", P, "mad", "max_acceleration"], label: "Linear acceleration", default: 2, type: "float", unit: "m/s²", doc: "Replaces the scaled acceleration while Mad Mars is selected", min: 0.05, max: 5, live: "/mars_app" },
@@ -162,7 +156,6 @@ export const CATALOG = [
   {
     id: "safety-clamp",
     section: "Safety clamp",
-    summary: "Hardware velocity ceiling",
     note: "The hardware ceiling every velocity source passes through at the motors. Keep these ≥ the driving caps above.",
     knobs: [
       { id: "bringup-safety-max_speed", path: ["bringup", P, "safety", "max_speed"], label: "Hard max speed", default: 0.8, type: "float", unit: "m/s", doc: "Hard /cmd_vel linear ceiling at the motors" },
@@ -172,7 +165,6 @@ export const CATALOG = [
   {
     id: "teleop",
     section: "Teleop",
-    summary: "Joystick slow-mode multiplier",
     knobs: [
       { id: "joystick_controller-joystick-slow_mode_factor", path: ["joystick_controller", P, "joystick", "slow_mode_factor"], label: "Slow-mode factor", default: 0.25, type: "float", doc: "Speed multiplier while the slow-mode button is held" },
     ],
@@ -180,7 +172,6 @@ export const CATALOG = [
   {
     id: "battery",
     section: "Battery",
-    summary: "Warning and critical thresholds",
     knobs: [
       { id: "bringup-battery-warning_percentage", path: ["bringup", P, "battery", "warning_percentage"], label: "Low-battery warning", default: 20, type: "int", unit: "%", doc: "Low-battery warning level", min: 0, max: 100, slider: true },
       { id: "bringup-battery-critical_percentage", path: ["bringup", P, "battery", "critical_percentage"], label: "Critical battery", default: 10, type: "int", unit: "%", doc: "Critical-battery level", min: 0, max: 100, slider: true },
@@ -189,7 +180,6 @@ export const CATALOG = [
   {
     id: "arm",
     section: "Arm",
-    summary: "Trajectory jerk limit",
     knobs: [
       { id: "mars_arm-max_jerk", path: ["mars_arm", P, "max_jerk"], label: "Max jerk", default: 150, type: "float", unit: "rad/s³", doc: "Trajectory jerk limit (0 disables)" },
     ],
@@ -197,7 +187,6 @@ export const CATALOG = [
   {
     id: "camera",
     section: "Camera",
-    summary: "Stream size, rate, and exposure",
     note: "Physical main camera (hardware only).",
     knobs: [
       { id: "main_camera_driver-publish_left_width", path: ["main_camera_driver", P, "publish_left_width"], label: "Image width", default: 640, type: "int", unit: "px", doc: "Streamed main-camera image width", subsection: "Stream" },
@@ -215,7 +204,6 @@ export const CATALOG = [
   {
     id: "manipulation",
     section: "Manipulation",
-    summary: "Learned-skill execution",
     note: "Learned-skill execution. Node-level, applied at startup (restart to apply); only n_action_steps accepts a per-skill behavior_config override.",
     knobs: [
       { id: "manipulation_server-inference_hz", path: ["manipulation_server", P, "inference_hz"], label: "Inference rate", default: 25, type: "float", unit: "Hz", doc: "Policy inference loop rate", subsection: "Execution" },
@@ -229,7 +217,6 @@ export const CATALOG = [
   {
     id: "localization",
     section: "Localization",
-    summary: "Grid localizer matching",
     note: "Grid localizer.",
     knobs: [
       { id: "navigation_grid_localizer-max_score_threshold", path: ["navigation_grid_localizer", P, "max_score_threshold"], label: "Match threshold", default: 0.3, type: "float", doc: "Lower = stricter match required to accept a pose" },
@@ -240,7 +227,6 @@ export const CATALOG = [
   {
     id: "uninavid",
     section: "UniNavid",
-    summary: "Vision-language navigation motion",
     note: "Vision-language navigation. UniNavid drives in discrete action bursts with its own speed knobs — separate from nav and teleop; the safety clamp is still the ceiling.",
     knobs: [
       { id: "uninavid_node-forward_speed", path: ["uninavid_node", P, "forward_speed"], label: "Forward speed", default: 0.3, type: "float", unit: "m/s", doc: "FORWARD action speed", subsection: "Motion" },
@@ -255,7 +241,6 @@ export const CATALOG = [
   {
     id: "brain-runtime",
     section: "Brain runtime",
-    summary: "Vision agent sensing and models",
     note: "Vision agent. The model fields are also set on the realtime voice loop below — change both so the chat-TTS and realtime-voice paths stay in sync.",
     knobs: [
       { id: "brain_client_node-vertical_fov", path: ["brain_client_node", P, "vertical_fov"], label: "Camera vertical FOV", default: 80, type: "float", unit: "°", doc: "Camera vertical field of view", subsection: "Sensing" },
@@ -271,7 +256,6 @@ export const CATALOG = [
   {
     id: "voice-speech",
     section: "Voice & speech",
-    summary: "TTS voice and speech models",
     note: "The robot's voice and the realtime voice / transcription loop. The TTS voice is one global setting that drives both the chat-TTS and realtime-voice paths; the model fields mirror Brain runtime above — keep both in sync.",
     knobs: [
       { id: "cartesia_voice_id", path: ["/**", P, "cartesia_voice_id"], label: "TTS voice", default: "9fdaae0b-f885-4813-b589-3c07cf9d5fea", type: "string", doc: "Cartesia TTS voice (drives both chat-TTS and realtime-voice). Pick a stock voice, or paste any voice ID from Cartesia's library of hundreds.", docHref: "https://play.cartesia.ai/voices", docLinkText: "Browse Cartesia voices ↗", options: VOICE_OPTIONS },
@@ -302,7 +286,7 @@ function knobs(/** @type {string[]} */ ...ids) {
 /**
  * Page section that includes every knob from a CATALOG group.
  * @param {string} groupId
- * @param {{id?: string, title?: string, summary?: string, note?: string}} [overrides]
+ * @param {{id?: string, title?: string, note?: string}} [overrides]
  * @returns {PageSection}
  */
 function fromGroup(groupId, overrides = {}) {
@@ -311,7 +295,6 @@ function fromGroup(groupId, overrides = {}) {
   return {
     id: overrides.id || groupId,
     title: overrides.title || group.section,
-    summary: overrides.summary === undefined ? group.summary : overrides.summary,
     note: overrides.note === undefined ? group.note : overrides.note,
     knobs: group.knobs,
   };
@@ -385,7 +368,6 @@ export const SETTINGS_PAGES = [
       {
         id: "camera-exposure",
         title: "Exposure",
-        summary: "Manual and automatic exposure tuning",
         knobs: knobs(
           "main_camera_driver-auto_exposure_mode",
           "main_camera_driver-exposure",
@@ -431,7 +413,6 @@ export const SETTINGS_PAGES = [
       {
         id: "agent-models",
         title: "Diagnostics & models",
-        summary: "Verbose logging and AI model selection",
         note: "Brain client. The model fields are also set on the realtime voice loop below — change both so the chat-TTS and realtime-voice paths stay in sync.",
         knobs: knobs(
           "brain_client_node-log_everything",
@@ -442,7 +423,6 @@ export const SETTINGS_PAGES = [
       {
         id: "speech-models",
         title: "Speech models",
-        summary: "Realtime voice and transcription models",
         note: "Keep these values in sync with the matching brain-client model fields above.",
         knobs: knobs(
           "input_manager_node-openai_realtime_model",

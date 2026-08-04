@@ -22,16 +22,15 @@
 //
 // Structure:
 //   CATALOG         — knobs + defaults, grouped by ROS/domain for maintenance
-//   SETTINGS_PAGES  — operator-facing destinations; references knobs by stable id
+//   SETTINGS_PAGES  — operator-facing destinations; looks up knobs by path-derived id
 //
-// Add a knob: give it a unique `id` in CATALOG, then list that id under the
-// right SETTINGS_PAGES section. The renderer picks the control from type metadata.
+// Add a knob: give it a path in CATALOG (id is derived), then list that id under
+// the right SETTINGS_PAGES section. The renderer picks the control from type metadata.
 // (Note: `inflation_layer` is intentionally omitted — its default differs per
 //  costmap (0.25/0.3/0.35), so there's no honest single default to show.)
 
 /**
  * @typedef {Object} Knob
- * @property {string} id  Stable id referenced by SETTINGS_PAGES.
  * @property {string[]} path  Full ROS param path in settings.yaml.
  * @property {string} label
  * @property {number|boolean|string} default
@@ -107,10 +106,10 @@ const CATALOG = [
     section: "Driving speed",
     note: "Manual (teleop) and autonomous (nav) are capped independently. Neither is the hard ceiling — the safety clamp below is.",
     knobs: [
-      { id: "motion_control-max_speed", path: ["/**", P, "motion_control", "max_speed"], label: "Manual max speed", default: 0.4, type: "float", unit: "m/s", doc: "Top translational speed for teleop / manual driving", min: 0.05, max: 2, live: "/mars_app", subsection: "Manual" },
-      { id: "motion_control-max_angular_speed", path: ["/**", P, "motion_control", "max_angular_speed"], label: "Manual max turn", default: 1, type: "float", unit: "rad/s", doc: "Top rotational speed for teleop / manual driving", min: 0.05, max: 5, live: "/mars_app", subsection: "Manual" },
-      { id: "nav-max_speed", path: ["/**", P, "nav", "max_speed"], label: "Autonomous max speed", default: 0.45, type: "float", unit: "m/s", doc: "Top translational speed for autonomous nav2", min: 0.05, max: 2, subsection: "Autonomous" },
-      { id: "nav-max_angular_speed", path: ["/**", P, "nav", "max_angular_speed"], label: "Autonomous max turn", default: 0.6, type: "float", unit: "rad/s", doc: "Top rotational speed for autonomous nav2", min: 0.05, max: 5, subsection: "Autonomous" },
+      { path: ["/**", P, "motion_control", "max_speed"], label: "Manual max speed", default: 0.4, type: "float", unit: "m/s", doc: "Top translational speed for teleop / manual driving", min: 0.05, max: 2, live: "/mars_app", subsection: "Manual" },
+      { path: ["/**", P, "motion_control", "max_angular_speed"], label: "Manual max turn", default: 1, type: "float", unit: "rad/s", doc: "Top rotational speed for teleop / manual driving", min: 0.05, max: 5, live: "/mars_app", subsection: "Manual" },
+      { path: ["/**", P, "nav", "max_speed"], label: "Autonomous max speed", default: 0.45, type: "float", unit: "m/s", doc: "Top translational speed for autonomous nav2", min: 0.05, max: 2, subsection: "Autonomous" },
+      { path: ["/**", P, "nav", "max_angular_speed"], label: "Autonomous max turn", default: 0.6, type: "float", unit: "rad/s", doc: "Top rotational speed for autonomous nav2", min: 0.05, max: 5, subsection: "Autonomous" },
     ],
   },
   {
@@ -118,15 +117,15 @@ const CATALOG = [
     section: "Drive feel",
     note: "How quickly the robot approaches the caps above — app / webapp joystick only; the USB gamepad has its own smoother. All apply immediately except the tick rate. The jerk limits are derived from these, so there is nothing to keep consistent by hand.",
     knobs: [
-      { id: "mars_app-motion_control-max_acceleration", path: ["mars_app", P, "motion_control", "max_acceleration"], label: "Linear acceleration", default: 0.2, type: "float", unit: "m/s²", doc: "How hard it speeds up", min: 0.05, max: 5, live: "/mars_app", subsection: "Linear" },
-      { id: "mars_app-motion_control-max_deceleration", path: ["mars_app", P, "motion_control", "max_deceleration"], label: "Linear deceleration", default: 1.2, type: "float", unit: "m/s²", doc: "How hard it slows down; keep above acceleration so stopping stays responsive", min: 0.05, max: 10, live: "/mars_app", subsection: "Linear" },
-      { id: "mars_app-motion_control-speed_time_constant", path: ["mars_app", P, "motion_control", "speed_time_constant"], label: "Linear smoothing lag", default: 0.4, type: "float", unit: "s", doc: "First-order lag on speed; higher is softer with a longer tail", min: 0.02, max: 2, live: "/mars_app", subsection: "Linear" },
-      { id: "mars_app-motion_control-max_angular_acceleration", path: ["mars_app", P, "motion_control", "max_angular_acceleration"], label: "Angular acceleration", default: 2, type: "float", unit: "rad/s²", doc: "How hard it starts turning", min: 0.05, max: 20, live: "/mars_app", subsection: "Angular" },
-      { id: "mars_app-motion_control-max_angular_deceleration", path: ["mars_app", P, "motion_control", "max_angular_deceleration"], label: "Angular deceleration", default: 6, type: "float", unit: "rad/s²", doc: "How hard it stops turning. A slow yaw ramp keeps turning after you stop asking", min: 0.05, max: 30, live: "/mars_app", subsection: "Angular" },
-      { id: "mars_app-motion_control-angular_speed_time_constant", path: ["mars_app", P, "motion_control", "angular_speed_time_constant"], label: "Angular smoothing lag", default: 0.1, type: "float", unit: "s", doc: "First-order lag on yaw, separate so turning can be tightened without changing straight-line feel", min: 0.02, max: 2, live: "/mars_app", subsection: "Angular" },
-      { id: "mars_app-motion_control-settle_epsilon", path: ["mars_app", P, "motion_control", "settle_epsilon"], label: "Stop threshold", default: 0.01, type: "float", unit: "m/s", doc: "Snap straight to zero below this instead of easing down. A hardware floor: the motors are commanded in whole units of 0.01, so anything finer is motion they cannot express, and lingering there makes their speed loop hunt", min: 0.01, max: 0.5, live: "/mars_app", subsection: "Stopping" },
-      { id: "mars_app-motion_control-input_timeout", path: ["mars_app", P, "motion_control", "input_timeout"], label: "Input timeout", default: 0.4, type: "float", unit: "s", doc: "Silence from the controller before ramping to a stop. Capped at the cmd_vel mux's 0.5 s teleop window — beyond that a dropped link keeps the robot moving on the last command", min: 0.05, max: 0.5, slider: true, step: 0.05, live: "/mars_app", subsection: "Stopping" },
-      { id: "mars_app-motion_control-dt", path: ["mars_app", P, "motion_control", "dt"], label: "Smoother tick", default: 0.02, type: "float", unit: "s", doc: "Control period (0.02 = 50 Hz). Fixes the timer, so this one needs a restart", subsection: "Stopping" },
+      { path: ["mars_app", P, "motion_control", "max_acceleration"], label: "Linear acceleration", default: 0.2, type: "float", unit: "m/s²", doc: "How hard it speeds up", min: 0.05, max: 5, live: "/mars_app", subsection: "Linear" },
+      { path: ["mars_app", P, "motion_control", "max_deceleration"], label: "Linear deceleration", default: 1.2, type: "float", unit: "m/s²", doc: "How hard it slows down; keep above acceleration so stopping stays responsive", min: 0.05, max: 10, live: "/mars_app", subsection: "Linear" },
+      { path: ["mars_app", P, "motion_control", "speed_time_constant"], label: "Linear smoothing lag", default: 0.4, type: "float", unit: "s", doc: "First-order lag on speed; higher is softer with a longer tail", min: 0.02, max: 2, live: "/mars_app", subsection: "Linear" },
+      { path: ["mars_app", P, "motion_control", "max_angular_acceleration"], label: "Angular acceleration", default: 2, type: "float", unit: "rad/s²", doc: "How hard it starts turning", min: 0.05, max: 20, live: "/mars_app", subsection: "Angular" },
+      { path: ["mars_app", P, "motion_control", "max_angular_deceleration"], label: "Angular deceleration", default: 6, type: "float", unit: "rad/s²", doc: "How hard it stops turning. A slow yaw ramp keeps turning after you stop asking", min: 0.05, max: 30, live: "/mars_app", subsection: "Angular" },
+      { path: ["mars_app", P, "motion_control", "angular_speed_time_constant"], label: "Angular smoothing lag", default: 0.1, type: "float", unit: "s", doc: "First-order lag on yaw, separate so turning can be tightened without changing straight-line feel", min: 0.02, max: 2, live: "/mars_app", subsection: "Angular" },
+      { path: ["mars_app", P, "motion_control", "settle_epsilon"], label: "Stop threshold", default: 0.01, type: "float", unit: "m/s", doc: "Snap straight to zero below this instead of easing down. A hardware floor: the motors are commanded in whole units of 0.01, so anything finer is motion they cannot express, and lingering there makes their speed loop hunt", min: 0.01, max: 0.5, live: "/mars_app", subsection: "Stopping" },
+      { path: ["mars_app", P, "motion_control", "input_timeout"], label: "Input timeout", default: 0.4, type: "float", unit: "s", doc: "Silence from the controller before ramping to a stop. Capped at the cmd_vel mux's 0.5 s teleop window — beyond that a dropped link keeps the robot moving on the last command", min: 0.05, max: 0.5, slider: true, step: 0.05, live: "/mars_app", subsection: "Stopping" },
+      { path: ["mars_app", P, "motion_control", "dt"], label: "Smoother tick", default: 0.02, type: "float", unit: "s", doc: "Control period (0.02 = 50 Hz). Fixes the timer, so this one needs a restart", subsection: "Stopping" },
     ],
   },
   {
@@ -134,13 +133,13 @@ const CATALOG = [
     section: "Heading hold",
     note: "Resists being turned off-course while driving straight. Does not restore heading lost earlier — you correct your own overshoot.",
     knobs: [
-      { id: "mars_app-heading_hold-gain", path: ["mars_app", P, "heading_hold", "gain"], label: "Gain", default: 5, type: "float", doc: "Correction per unit of heading error. 0 disables the loop", live: "/mars_app", subsection: "Correction" },
-      { id: "mars_app-heading_hold-leak", path: ["mars_app", P, "heading_hold", "leak"], label: "Memory", default: 0.2, type: "float", unit: "s", doc: "How long it remembers a heading. Longer rejects drift better but takes longer to forget; 0 makes it an absolute heading lock", live: "/mars_app", subsection: "Correction" },
-      { id: "mars_app-heading_hold-max_correction", path: ["mars_app", P, "heading_hold", "max_correction"], label: "Correction ceiling", default: 1, type: "float", unit: "rad/s", doc: "Most it may steer on its own", live: "/mars_app", subsection: "Correction" },
-      { id: "mars_app-heading_hold-min_speed", path: ["mars_app", P, "heading_hold", "min_speed"], label: "Engage above", default: 0.01, type: "float", unit: "m/s", doc: "Stays off below this speed — heading means little while creeping. A gentle acceleration limit means you cross it later, leaving longer uncorrected at the start of a move", live: "/mars_app", subsection: "Engagement" },
-      { id: "mars_app-heading_hold-straight_yaw", path: ["mars_app", P, "heading_hold", "straight_yaw"], label: "Straight threshold", default: 0.05, type: "float", unit: "rad/s", doc: "Requested turn rate below which you count as driving straight; above it the hold releases immediately", live: "/mars_app", subsection: "Engagement" },
-      { id: "mars_app-heading_hold-deadband", path: ["mars_app", P, "heading_hold", "deadband"], label: "Error deadband", default: 0.01, type: "float", unit: "rad", doc: "Heading error to ignore. One unit of the robot's heading resolution, so below this the loop would chatter", live: "/mars_app", subsection: "Engagement" },
-      { id: "mars_app-heading_hold-slew", path: ["mars_app", P, "heading_hold", "slew"], label: "Engage rate", default: 2, type: "float", unit: "rad/s²", doc: "How fast the correction itself may change, so engaging and dropping out are not steps", live: "/mars_app", subsection: "Engagement" },
+      { path: ["mars_app", P, "heading_hold", "gain"], label: "Gain", default: 5, type: "float", doc: "Correction per unit of heading error. 0 disables the loop", live: "/mars_app", subsection: "Correction" },
+      { path: ["mars_app", P, "heading_hold", "leak"], label: "Memory", default: 0.2, type: "float", unit: "s", doc: "How long it remembers a heading. Longer rejects drift better but takes longer to forget; 0 makes it an absolute heading lock", live: "/mars_app", subsection: "Correction" },
+      { path: ["mars_app", P, "heading_hold", "max_correction"], label: "Correction ceiling", default: 1, type: "float", unit: "rad/s", doc: "Most it may steer on its own", live: "/mars_app", subsection: "Correction" },
+      { path: ["mars_app", P, "heading_hold", "min_speed"], label: "Engage above", default: 0.01, type: "float", unit: "m/s", doc: "Stays off below this speed — heading means little while creeping. A gentle acceleration limit means you cross it later, leaving longer uncorrected at the start of a move", live: "/mars_app", subsection: "Engagement" },
+      { path: ["mars_app", P, "heading_hold", "straight_yaw"], label: "Straight threshold", default: 0.05, type: "float", unit: "rad/s", doc: "Requested turn rate below which you count as driving straight; above it the hold releases immediately", live: "/mars_app", subsection: "Engagement" },
+      { path: ["mars_app", P, "heading_hold", "deadband"], label: "Error deadband", default: 0.01, type: "float", unit: "rad", doc: "Heading error to ignore. One unit of the robot's heading resolution, so below this the loop would chatter", live: "/mars_app", subsection: "Engagement" },
+      { path: ["mars_app", P, "heading_hold", "slew"], label: "Engage rate", default: 2, type: "float", unit: "rad/s²", doc: "How fast the correction itself may change, so engaging and dropping out are not steps", live: "/mars_app", subsection: "Engagement" },
     ],
   },
   {
@@ -148,8 +147,8 @@ const CATALOG = [
     section: "Mad Mars mode",
     note: "Mad Mars is the one speed mode whose accelerations are stated outright rather than scaled from the values above — it wants more linear and less angular than a single multiplier can give.",
     knobs: [
-      { id: "mars_app-mad-max_acceleration", path: ["mars_app", P, "mad", "max_acceleration"], label: "Linear acceleration", default: 2, type: "float", unit: "m/s²", doc: "Replaces the scaled acceleration while Mad Mars is selected", min: 0.05, max: 5, live: "/mars_app" },
-      { id: "mars_app-mad-max_angular_acceleration", path: ["mars_app", P, "mad", "max_angular_acceleration"], label: "Angular acceleration", default: 3, type: "float", unit: "rad/s²", doc: "Replaces the scaled turn-in rate while Mad Mars is selected", min: 0.05, max: 20, live: "/mars_app" },
+      { path: ["mars_app", P, "mad", "max_acceleration"], label: "Linear acceleration", default: 2, type: "float", unit: "m/s²", doc: "Replaces the scaled acceleration while Mad Mars is selected", min: 0.05, max: 5, live: "/mars_app" },
+      { path: ["mars_app", P, "mad", "max_angular_acceleration"], label: "Angular acceleration", default: 3, type: "float", unit: "rad/s²", doc: "Replaces the scaled turn-in rate while Mad Mars is selected", min: 0.05, max: 20, live: "/mars_app" },
     ],
   },
   {
@@ -157,30 +156,30 @@ const CATALOG = [
     section: "Safety clamp",
     note: "The hardware ceiling every velocity source passes through at the motors. Keep these ≥ the driving caps above.",
     knobs: [
-      { id: "bringup-safety-max_speed", path: ["bringup", P, "safety", "max_speed"], label: "Hard max speed", default: 0.8, type: "float", unit: "m/s", doc: "Hard /cmd_vel linear ceiling at the motors" },
-      { id: "bringup-safety-max_angular_speed", path: ["bringup", P, "safety", "max_angular_speed"], label: "Hard max turn", default: 2.5, type: "float", unit: "rad/s", doc: "Hard /cmd_vel angular ceiling at the motors" },
+      { path: ["bringup", P, "safety", "max_speed"], label: "Hard max speed", default: 0.8, type: "float", unit: "m/s", doc: "Hard /cmd_vel linear ceiling at the motors" },
+      { path: ["bringup", P, "safety", "max_angular_speed"], label: "Hard max turn", default: 2.5, type: "float", unit: "rad/s", doc: "Hard /cmd_vel angular ceiling at the motors" },
     ],
   },
   {
     id: "teleop",
     section: "Teleop",
     knobs: [
-      { id: "joystick_controller-joystick-slow_mode_factor", path: ["joystick_controller", P, "joystick", "slow_mode_factor"], label: "Slow-mode factor", default: 0.25, type: "float", doc: "Speed multiplier while the slow-mode button is held" },
+      { path: ["joystick_controller", P, "joystick", "slow_mode_factor"], label: "Slow-mode factor", default: 0.25, type: "float", doc: "Speed multiplier while the slow-mode button is held" },
     ],
   },
   {
     id: "battery",
     section: "Battery",
     knobs: [
-      { id: "bringup-battery-warning_percentage", path: ["bringup", P, "battery", "warning_percentage"], label: "Low-battery warning", default: 20, type: "int", unit: "%", doc: "Low-battery warning level", min: 0, max: 100, slider: true },
-      { id: "bringup-battery-critical_percentage", path: ["bringup", P, "battery", "critical_percentage"], label: "Critical battery", default: 10, type: "int", unit: "%", doc: "Critical-battery level", min: 0, max: 100, slider: true },
+      { path: ["bringup", P, "battery", "warning_percentage"], label: "Low-battery warning", default: 20, type: "int", unit: "%", doc: "Low-battery warning level", min: 0, max: 100, slider: true },
+      { path: ["bringup", P, "battery", "critical_percentage"], label: "Critical battery", default: 10, type: "int", unit: "%", doc: "Critical-battery level", min: 0, max: 100, slider: true },
     ],
   },
   {
     id: "arm",
     section: "Arm",
     knobs: [
-      { id: "mars_arm-max_jerk", path: ["mars_arm", P, "max_jerk"], label: "Max jerk", default: 150, type: "float", unit: "rad/s³", doc: "Trajectory jerk limit (0 disables)" },
+      { path: ["mars_arm", P, "max_jerk"], label: "Max jerk", default: 150, type: "float", unit: "rad/s³", doc: "Trajectory jerk limit (0 disables)" },
     ],
   },
   {
@@ -188,16 +187,16 @@ const CATALOG = [
     section: "Camera",
     note: "Physical main camera (hardware only).",
     knobs: [
-      { id: "main_camera_driver-publish_left_width", path: ["main_camera_driver", P, "publish_left_width"], label: "Image width", default: 640, type: "int", unit: "px", doc: "Streamed main-camera image width", subsection: "Stream" },
-      { id: "main_camera_driver-publish_left_height", path: ["main_camera_driver", P, "publish_left_height"], label: "Image height", default: 480, type: "int", unit: "px", doc: "Streamed main-camera image height", subsection: "Stream" },
-      { id: "main_camera_driver-fps", path: ["main_camera_driver", P, "fps"], label: "Frame rate", default: 30, type: "float", unit: "fps", doc: "Camera frame rate", subsection: "Stream" },
-      { id: "main_camera_driver-jpeg_quality", path: ["main_camera_driver", P, "jpeg_quality"], label: "JPEG quality", default: 80, type: "int", doc: "JPEG compression quality (1–100)", min: 1, max: 100, slider: true, subsection: "Stream" },
-      { id: "main_camera_driver-auto_exposure_mode", path: ["main_camera_driver", P, "auto_exposure_mode"], label: "Auto-exposure mode", default: 0, type: "int", doc: "0 = hardware AE, 1 = custom PID, 2 = manual", subsection: "Exposure" },
-      { id: "main_camera_driver-exposure", path: ["main_camera_driver", P, "exposure"], label: "Manual exposure", default: -1, type: "int", doc: "Manual exposure time (-1 = keep current; 1–10000)", subsection: "Exposure" },
-      { id: "main_camera_driver-gain", path: ["main_camera_driver", P, "gain"], label: "Manual gain", default: -1, type: "int", doc: "Manual gain (-1 = keep current; 0–255)", subsection: "Exposure" },
-      { id: "main_camera_driver-default_gain", path: ["main_camera_driver", P, "default_gain"], label: "Auto-exposure gain", default: 110, type: "int", doc: "Gain used in auto-exposure mode (0–255)", min: 0, max: 255, slider: true, subsection: "Exposure" },
-      { id: "main_camera_driver-target_brightness", path: ["main_camera_driver", P, "target_brightness"], label: "Target brightness", default: 128, type: "float", doc: "Auto-exposure target brightness (0–255)", min: 0, max: 255, slider: true, step: 1, subsection: "Exposure" },
-      { id: "main_camera_driver-ae_kp", path: ["main_camera_driver", P, "ae_kp"], label: "Auto-exposure Kp", default: 0.8, type: "float", doc: "Auto-exposure proportional gain", subsection: "Exposure" },
+      { path: ["main_camera_driver", P, "publish_left_width"], label: "Image width", default: 640, type: "int", unit: "px", doc: "Streamed main-camera image width", subsection: "Stream" },
+      { path: ["main_camera_driver", P, "publish_left_height"], label: "Image height", default: 480, type: "int", unit: "px", doc: "Streamed main-camera image height", subsection: "Stream" },
+      { path: ["main_camera_driver", P, "fps"], label: "Frame rate", default: 30, type: "float", unit: "fps", doc: "Camera frame rate", subsection: "Stream" },
+      { path: ["main_camera_driver", P, "jpeg_quality"], label: "JPEG quality", default: 80, type: "int", doc: "JPEG compression quality (1–100)", min: 1, max: 100, slider: true, subsection: "Stream" },
+      { path: ["main_camera_driver", P, "auto_exposure_mode"], label: "Auto-exposure mode", default: 0, type: "int", doc: "0 = hardware AE, 1 = custom PID, 2 = manual", subsection: "Exposure" },
+      { path: ["main_camera_driver", P, "exposure"], label: "Manual exposure", default: -1, type: "int", doc: "Manual exposure time (-1 = keep current; 1–10000)", subsection: "Exposure" },
+      { path: ["main_camera_driver", P, "gain"], label: "Manual gain", default: -1, type: "int", doc: "Manual gain (-1 = keep current; 0–255)", subsection: "Exposure" },
+      { path: ["main_camera_driver", P, "default_gain"], label: "Auto-exposure gain", default: 110, type: "int", doc: "Gain used in auto-exposure mode (0–255)", min: 0, max: 255, slider: true, subsection: "Exposure" },
+      { path: ["main_camera_driver", P, "target_brightness"], label: "Target brightness", default: 128, type: "float", doc: "Auto-exposure target brightness (0–255)", min: 0, max: 255, slider: true, step: 1, subsection: "Exposure" },
+      { path: ["main_camera_driver", P, "ae_kp"], label: "Auto-exposure Kp", default: 0.8, type: "float", doc: "Auto-exposure proportional gain", subsection: "Exposure" },
     ],
   },
   {
@@ -205,12 +204,12 @@ const CATALOG = [
     section: "Manipulation",
     note: "Learned-skill execution. Node-level, applied at startup (restart to apply); only n_action_steps accepts a per-skill behavior_config override.",
     knobs: [
-      { id: "manipulation_server-inference_hz", path: ["manipulation_server", P, "inference_hz"], label: "Inference rate", default: 25, type: "float", unit: "Hz", doc: "Policy inference loop rate", subsection: "Execution" },
-      { id: "manipulation_server-speed", path: ["manipulation_server", P, "speed"], label: "Execution speed", default: 1.5, type: "float", unit: "×", doc: "Action execution speed multiplier", subsection: "Execution" },
-      { id: "manipulation_server-replay_base_speed_scale", path: ["manipulation_server", P, "replay_base_speed_scale"], label: "Replay base speed", default: 1, type: "float", unit: "×", doc: "Base-speed scale for replay (1.0 = recorded speed)", subsection: "Execution" },
-      { id: "manipulation_server-learned_base_speed_scale", path: ["manipulation_server", P, "learned_base_speed_scale"], label: "Learned base speed", default: 1, type: "float", unit: "×", doc: "Base-speed scale for the learned policy (1.0 = full predicted speed)", subsection: "Execution" },
-      { id: "manipulation_server-n_action_steps", path: ["manipulation_server", P, "n_action_steps"], label: "Replan horizon", default: 0, type: "int", doc: "Replan horizon; 0 = auto (min(40, chunk_size))", subsection: "Policy" },
-      { id: "manipulation_server-temporal_ensemble_coeff", path: ["manipulation_server", P, "temporal_ensemble_coeff"], label: "Action smoothing", default: 0, type: "float", doc: "ACT temporal-ensemble coefficient; 0 = disabled (default). 0.01 is a good value to enable it", subsection: "Policy" },
+      { path: ["manipulation_server", P, "inference_hz"], label: "Inference rate", default: 25, type: "float", unit: "Hz", doc: "Policy inference loop rate", subsection: "Execution" },
+      { path: ["manipulation_server", P, "speed"], label: "Execution speed", default: 1.5, type: "float", unit: "×", doc: "Action execution speed multiplier", subsection: "Execution" },
+      { path: ["manipulation_server", P, "replay_base_speed_scale"], label: "Replay base speed", default: 1, type: "float", unit: "×", doc: "Base-speed scale for replay (1.0 = recorded speed)", subsection: "Execution" },
+      { path: ["manipulation_server", P, "learned_base_speed_scale"], label: "Learned base speed", default: 1, type: "float", unit: "×", doc: "Base-speed scale for the learned policy (1.0 = full predicted speed)", subsection: "Execution" },
+      { path: ["manipulation_server", P, "n_action_steps"], label: "Replan horizon", default: 0, type: "int", doc: "Replan horizon; 0 = auto (min(40, chunk_size))", subsection: "Policy" },
+      { path: ["manipulation_server", P, "temporal_ensemble_coeff"], label: "Action smoothing", default: 0, type: "float", doc: "ACT temporal-ensemble coefficient; 0 = disabled (default). 0.01 is a good value to enable it", subsection: "Policy" },
     ],
   },
   {
@@ -218,9 +217,9 @@ const CATALOG = [
     section: "Localization",
     note: "Grid localizer.",
     knobs: [
-      { id: "navigation_grid_localizer-max_score_threshold", path: ["navigation_grid_localizer", P, "max_score_threshold"], label: "Match threshold", default: 0.3, type: "float", doc: "Lower = stricter match required to accept a pose" },
-      { id: "navigation_grid_localizer-max_range", path: ["navigation_grid_localizer", P, "max_range"], label: "Max lidar range", default: 12, type: "float", unit: "m", doc: "Max lidar range used for matching" },
-      { id: "navigation_grid_localizer-auto_localize_timeout", path: ["navigation_grid_localizer", P, "auto_localize_timeout"], label: "Auto-localize timeout", default: 30, type: "float", unit: "s", doc: "Seconds to keep trying auto-localization on startup" },
+      { path: ["navigation_grid_localizer", P, "max_score_threshold"], label: "Match threshold", default: 0.3, type: "float", doc: "Lower = stricter match required to accept a pose" },
+      { path: ["navigation_grid_localizer", P, "max_range"], label: "Max lidar range", default: 12, type: "float", unit: "m", doc: "Max lidar range used for matching" },
+      { path: ["navigation_grid_localizer", P, "auto_localize_timeout"], label: "Auto-localize timeout", default: 30, type: "float", unit: "s", doc: "Seconds to keep trying auto-localization on startup" },
     ],
   },
   {
@@ -228,13 +227,13 @@ const CATALOG = [
     section: "UniNavid",
     note: "Vision-language navigation. UniNavid drives in discrete action bursts with its own speed knobs — separate from nav and teleop; the safety clamp is still the ceiling.",
     knobs: [
-      { id: "uninavid_node-forward_speed", path: ["uninavid_node", P, "forward_speed"], label: "Forward speed", default: 0.3, type: "float", unit: "m/s", doc: "FORWARD action speed", subsection: "Motion" },
-      { id: "uninavid_node-turn_speed", path: ["uninavid_node", P, "turn_speed"], label: "Turn speed", default: 0.8, type: "float", unit: "rad/s", doc: "LEFT / RIGHT action speed", subsection: "Motion" },
-      { id: "uninavid_node-cmd_duration_sec", path: ["uninavid_node", P, "cmd_duration_sec"], label: "Command duration", default: 0.1, type: "float", unit: "s", doc: "How long each movement command runs", subsection: "Motion" },
-      { id: "uninavid_node-image_send_hz", path: ["uninavid_node", P, "image_send_hz"], label: "Image send rate", default: 49, type: "float", unit: "Hz", doc: "Camera frames sent to the nav model per second", subsection: "Loop" },
-      { id: "uninavid_node-consecutive_stops_to_complete", path: ["uninavid_node", P, "consecutive_stops_to_complete"], label: "Stops to complete", default: 30, type: "int", doc: "Stop predictions in a row before \"reached\"", subsection: "Loop" },
-      { id: "uninavid_node-cmd_publish_hz", path: ["uninavid_node", P, "cmd_publish_hz"], label: "Command publish rate", default: 50, type: "float", unit: "Hz", doc: "cmd_vel republish rate during a move", subsection: "Loop" },
-      { id: "uninavid_node-poll_period_sec", path: ["uninavid_node", P, "poll_period_sec"], label: "Poll period", default: 0.02, type: "float", unit: "s", doc: "Action-loop poll interval", subsection: "Loop" },
+      { path: ["uninavid_node", P, "forward_speed"], label: "Forward speed", default: 0.3, type: "float", unit: "m/s", doc: "FORWARD action speed", subsection: "Motion" },
+      { path: ["uninavid_node", P, "turn_speed"], label: "Turn speed", default: 0.8, type: "float", unit: "rad/s", doc: "LEFT / RIGHT action speed", subsection: "Motion" },
+      { path: ["uninavid_node", P, "cmd_duration_sec"], label: "Command duration", default: 0.1, type: "float", unit: "s", doc: "How long each movement command runs", subsection: "Motion" },
+      { path: ["uninavid_node", P, "image_send_hz"], label: "Image send rate", default: 49, type: "float", unit: "Hz", doc: "Camera frames sent to the nav model per second", subsection: "Loop" },
+      { path: ["uninavid_node", P, "consecutive_stops_to_complete"], label: "Stops to complete", default: 30, type: "int", doc: "Stop predictions in a row before \"reached\"", subsection: "Loop" },
+      { path: ["uninavid_node", P, "cmd_publish_hz"], label: "Command publish rate", default: 50, type: "float", unit: "Hz", doc: "cmd_vel republish rate during a move", subsection: "Loop" },
+      { path: ["uninavid_node", P, "poll_period_sec"], label: "Poll period", default: 0.02, type: "float", unit: "s", doc: "Action-loop poll interval", subsection: "Loop" },
     ],
   },
   {
@@ -242,14 +241,14 @@ const CATALOG = [
     section: "Brain runtime",
     note: "Vision agent. The model fields are also set on the realtime voice loop below — change both so the chat-TTS and realtime-voice paths stay in sync.",
     knobs: [
-      { id: "brain_client_node-vertical_fov", path: ["brain_client_node", P, "vertical_fov"], label: "Camera vertical FOV", default: 80, type: "float", unit: "°", doc: "Camera vertical field of view", subsection: "Sensing" },
-      { id: "brain_client_node-pose_image_interval", path: ["brain_client_node", P, "pose_image_interval"], label: "Pose-image interval", default: 0.5, type: "float", unit: "s", doc: "Seconds between pose-image sends", subsection: "Sensing" },
-      { id: "brain_client_node-scan_stale_after_sec", path: ["brain_client_node", P, "scan_stale_after_sec"], label: "Scan stale after", default: 10, type: "float", unit: "s", doc: "Seconds without a lidar scan before flagging stale", subsection: "Sensing" },
-      { id: "brain_client_node-send_depth", path: ["brain_client_node", P, "send_depth"], label: "Send depth images", default: false, type: "bool", doc: "Also send depth images to the agent", subsection: "Sensing" },
-      { id: "brain_client_node-send_arm_camera_image", path: ["brain_client_node", P, "send_arm_camera_image"], label: "Send arm-camera image", default: true, type: "bool", doc: "Also send the arm camera image", subsection: "Sensing" },
-      { id: "brain_client_node-log_everything", path: ["brain_client_node", P, "log_everything"], label: "Verbose logging", default: true, type: "bool", doc: "Verbose vision-agent output logging", subsection: "Models" },
-      { id: "brain_client_node-openai_realtime_model", path: ["brain_client_node", P, "openai_realtime_model"], label: "Realtime model", default: "gpt-4o-realtime-preview", type: "string", doc: "OpenAI realtime model", subsection: "Models" },
-      { id: "brain_client_node-openai_transcribe_model", path: ["brain_client_node", P, "openai_transcribe_model"], label: "Transcribe model", default: "gpt-4o-mini-transcribe", type: "string", doc: "OpenAI transcription model", subsection: "Models" },
+      { path: ["brain_client_node", P, "vertical_fov"], label: "Camera vertical FOV", default: 80, type: "float", unit: "°", doc: "Camera vertical field of view", subsection: "Sensing" },
+      { path: ["brain_client_node", P, "pose_image_interval"], label: "Pose-image interval", default: 0.5, type: "float", unit: "s", doc: "Seconds between pose-image sends", subsection: "Sensing" },
+      { path: ["brain_client_node", P, "scan_stale_after_sec"], label: "Scan stale after", default: 10, type: "float", unit: "s", doc: "Seconds without a lidar scan before flagging stale", subsection: "Sensing" },
+      { path: ["brain_client_node", P, "send_depth"], label: "Send depth images", default: false, type: "bool", doc: "Also send depth images to the agent", subsection: "Sensing" },
+      { path: ["brain_client_node", P, "send_arm_camera_image"], label: "Send arm-camera image", default: true, type: "bool", doc: "Also send the arm camera image", subsection: "Sensing" },
+      { path: ["brain_client_node", P, "log_everything"], label: "Verbose logging", default: true, type: "bool", doc: "Verbose vision-agent output logging", subsection: "Models" },
+      { path: ["brain_client_node", P, "openai_realtime_model"], label: "Realtime model", default: "gpt-4o-realtime-preview", type: "string", doc: "OpenAI realtime model", subsection: "Models" },
+      { path: ["brain_client_node", P, "openai_transcribe_model"], label: "Transcribe model", default: "gpt-4o-mini-transcribe", type: "string", doc: "OpenAI transcription model", subsection: "Models" },
     ],
   },
   {
@@ -257,19 +256,25 @@ const CATALOG = [
     section: "Voice & speech",
     note: "The robot's voice and the realtime voice / transcription loop. The TTS voice is one global setting that drives both the chat-TTS and realtime-voice paths; the model fields mirror Brain runtime above — keep both in sync.",
     knobs: [
-      { id: "cartesia_voice_id", path: ["/**", P, "cartesia_voice_id"], label: "TTS voice", default: "9fdaae0b-f885-4813-b589-3c07cf9d5fea", type: "string", doc: "Cartesia TTS voice (drives both chat-TTS and realtime-voice). Pick a stock voice, or paste any voice ID from Cartesia's library of hundreds.", docHref: "https://play.cartesia.ai/voices", docLinkText: "Browse Cartesia voices ↗", options: VOICE_OPTIONS },
-      { id: "input_manager_node-openai_realtime_model", path: ["input_manager_node", P, "openai_realtime_model"], label: "Realtime model", default: "gpt-4o-realtime-preview", type: "string", doc: "OpenAI realtime model" },
-      { id: "input_manager_node-openai_transcribe_model", path: ["input_manager_node", P, "openai_transcribe_model"], label: "Transcribe model", default: "gpt-4o-mini-transcribe", type: "string", doc: "OpenAI transcription model" },
+      { path: ["/**", P, "cartesia_voice_id"], label: "TTS voice", default: "9fdaae0b-f885-4813-b589-3c07cf9d5fea", type: "string", doc: "Cartesia TTS voice (drives both chat-TTS and realtime-voice). Pick a stock voice, or paste any voice ID from Cartesia's library of hundreds.", docHref: "https://play.cartesia.ai/voices", docLinkText: "Browse Cartesia voices ↗", options: VOICE_OPTIONS },
+      { path: ["input_manager_node", P, "openai_realtime_model"], label: "Realtime model", default: "gpt-4o-realtime-preview", type: "string", doc: "OpenAI realtime model" },
+      { path: ["input_manager_node", P, "openai_transcribe_model"], label: "Transcribe model", default: "gpt-4o-mini-transcribe", type: "string", doc: "OpenAI transcription model" },
     ],
   },
 ];
+
+// Stable id from a ROS path: drop /** and ros__parameters, join the rest with "-".
+function knobId(/** @type {string[]} */ path) {
+  return (path[0] === "/**" ? path.slice(2) : [path[0], ...path.slice(2)]).join("-");
+}
 
 /** @type {Map<string, Knob>} */
 const KNOBS_BY_ID = new Map();
 for (const group of CATALOG) {
   for (const knob of group.knobs) {
-    if (KNOBS_BY_ID.has(knob.id)) throw new Error(`Duplicate settings knob id: ${knob.id}`);
-    KNOBS_BY_ID.set(knob.id, knob);
+    const id = knobId(knob.path);
+    if (KNOBS_BY_ID.has(id)) throw new Error(`Duplicate settings knob id: ${id}`);
+    KNOBS_BY_ID.set(id, knob);
   }
 }
 

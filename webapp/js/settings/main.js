@@ -606,10 +606,6 @@ function setHighlightedText(el, text, terms) {
     .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
     .sort((a, b) => b.length - a.length)
     .join("|");
-  if (!pattern) {
-    el.textContent = text;
-    return;
-  }
   const re = new RegExp(pattern, "gi");
   let last = 0;
   for (const match of text.matchAll(re)) {
@@ -622,7 +618,6 @@ function setHighlightedText(el, text, terms) {
     last = start + match[0].length;
   }
   if (last < text.length) el.append(text.slice(last));
-  if (!el.childNodes.length) el.textContent = text;
 }
 
 /**

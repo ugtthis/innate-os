@@ -514,12 +514,14 @@ function build() {
       panel.appendChild(buildPageSection(pageSection));
       const sectionEntries = entries.slice(sectionStart);
       ui.entries.push(...sectionEntries);
-      const breadcrumb = `${settingsPage.title} · ${pageSection.title}`;
       const extraSearchSources = [
         { label: "Matched in section description", text: pageSection.note || "" },
         pageSearchSource,
       ].filter((source) => source.text);
       for (const entry of sectionEntries) {
+        const breadcrumb = entry.knob.subsection
+          ? `${settingsPage.title} · ${pageSection.title} · ${entry.knob.subsection}`
+          : `${settingsPage.title} · ${pageSection.title}`;
         addSearchTarget({
           label: entry.knob.label,
           description: entry.knob.doc,

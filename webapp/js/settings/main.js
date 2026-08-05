@@ -435,7 +435,7 @@ function build() {
     );
 
     const text = textEl("span", "set-index-text");
-    const label = textEl("span", "set-index-label", settingsPage.section);
+    const label = textEl("span", "set-index-label", settingsPage.title);
     const summary = textEl("span", "set-index-summary", settingsPage.summary);
     text.append(label, summary);
 
@@ -447,10 +447,10 @@ function build() {
     indexCard.appendChild(row);
 
     const panel = textEl("section", "set-pane");
-    panel.setAttribute("aria-label", settingsPage.section);
+    panel.setAttribute("aria-label", settingsPage.title);
 
-    const title = textEl("h1", "page-title", settingsPage.section);
-    panel.appendChild(title);
+    const pageTitle = textEl("h1", "page-title", settingsPage.title);
+    panel.appendChild(pageTitle);
 
     if (settingsPage.note) {
       const gn = textEl("p", "settings-note", settingsPage.note);
@@ -474,14 +474,14 @@ function build() {
       panel.appendChild(buildPageSection(pageSection));
       const sectionEntries = entries.slice(sectionStart);
       ui.entries.push(...sectionEntries);
-      const context = `${settingsPage.section} · ${pageSection.title}`;
+      const context = `${settingsPage.title} · ${pageSection.title}`;
       for (const entry of sectionEntries) {
         searchTargets.push({
           entry,
           page: ui,
           context,
           haystack: [
-            settingsPage.section,
+            settingsPage.title,
             settingsPage.summary,
             pageSection.title,
             pageSection.note || "",

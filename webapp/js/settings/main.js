@@ -274,6 +274,7 @@ function buildVolumeSection() {
   ctl.appendChild(status);
 
   row.appendChild(ctl);
+  enableRowClick(row);
   section.appendChild(row);
 
   // Last percent known to be applied on the robot; the revert target on failure.
@@ -751,15 +752,19 @@ function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
   buildKnobControl(ctl, entry);
 
   row.appendChild(ctl);
-  // Whole row activates the control (label, padding, empty control column).
-  // Skip real controls, Restore, and doc links.
+  enableRowClick(row);
+  entries.push(entry);
+  return row;
+}
+
+/** Whole row activates the control (label, padding, empty control column).
+ *  Skip real controls, Restore, and doc links. */
+function enableRowClick(/** @type {HTMLElement} */ row) {
   row.addEventListener("click", (e) => {
     const t = /** @type {HTMLElement} */ (e.target);
     if (t.closest("a, button, input, select, textarea, label")) return;
     activateRowControl(row);
   });
-  entries.push(entry);
-  return row;
 }
 
 function activateRowControl(/** @type {HTMLElement} */ row) {

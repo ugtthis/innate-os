@@ -177,7 +177,6 @@ export const SETTINGS_STYLE = `
 .set-slider-read { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; flex: none; }
 .set-slider-read .mx { color: var(--muted, #8a90a0); }
 .set-card-volume .set-row { border-bottom: none; }
-.set-card-volume .set-row:hover { background: none; }
 .set-card-volume-status { font-size: 12px; margin-left: 6px; }
 .set-card-volume .set-slider { width: min(180px, 28vw); }
 

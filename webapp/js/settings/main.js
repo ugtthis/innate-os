@@ -171,7 +171,7 @@ function isDirty(/** @type {Entry} */ e) {
   return e.overridden && e.value !== e.savedValue;
 }
 
-function editScalar(/** @type {Entry} */ entry, /** @type {*} */ value) {
+function setKnobValue(/** @type {Entry} */ entry, /** @type {*} */ value) {
   entry.value = value;
   entry.overridden = entry.value !== entry.knob.default;
   recompute();
@@ -757,7 +757,7 @@ function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
     row,
   };
 
-  buildScalarControl(ctl, entry);
+  buildKnobControl(ctl, entry);
 
   row.appendChild(ctl);
   // Whole row activates the control (label, padding, empty control column).
@@ -790,8 +790,8 @@ function activateRowControl(/** @type {HTMLElement} */ row) {
   }
 }
 
-/** Checkbox / slider / text / number control (bool, bounded numeric, string, number). */
-function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ entry) {
+/** Build the knob's input control (bool, slider, select, string, or number). */
+function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ entry) {
   const knob = entry.knob;
   const isSlider =
     (knob.type === "int" || knob.type === "float") && knob.slider === true && knob.max !== undefined;
@@ -809,7 +809,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     entry.render = () => {
       input.checked = Boolean(entry.value);
     };
-    input.addEventListener("change", () => editScalar(entry, input.checked));
+    input.addEventListener("change", () => setKnobValue(entry, input.checked));
   } else if (isSlider) {
     const slider = document.createElement("input");
     slider.type = "range";
@@ -837,7 +837,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     slider.addEventListener("input", () => {
       const value = Number(slider.value);
       cur.textContent = String(value);
-      editScalar(entry, value);
+      setKnobValue(entry, value);
     });
   } else if (knob.options) {
     const options = knob.options; // capture: the closures below can't re-narrow it
@@ -880,7 +880,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
         custom.focus();
         return;
       }
-      editScalar(entry, select.value);
+      setKnobValue(entry, select.value);
     });
     custom.addEventListener("input", () => {
       // An empty id is never valid (it breaks TTS), so it isn't a real override.
@@ -889,7 +889,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
         entry.overridden = false;
         recompute();
       } else {
-        editScalar(entry, custom.value);
+        setKnobValue(entry, custom.value);
       }
     });
     main.append(row, custom);
@@ -901,7 +901,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     entry.render = () => {
       input.value = String(entry.value);
     };
-    input.addEventListener("input", () => editScalar(entry, input.value));
+    input.addEventListener("input", () => setKnobValue(entry, input.value));
   } else {
     const wrap = textEl("div", "set-num-wrap");
     const input = document.createElement("input");
@@ -927,7 +927,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     };
     input.addEventListener("input", () => {
       // Tolerate a comma decimal separator from locale-habit typing.
-      editScalar(entry, Number(input.value.replace(",", ".")));
+      setKnobValue(entry, Number(input.value.replace(",", ".")));
     });
   }
 

@@ -114,27 +114,25 @@ function addSearchTarget(
   });
 }
 
-function defaultShort(/** @type {import("./catalog.js").Knob} */ knob) {
-  if (knob.type === "bool") return knob.default ? "on" : "off";
-  if (knob.options) {
-    const opt = knob.options.find((o) => o.value === knob.default);
-    if (opt) return opt.label;
-  }
-  return String(knob.default) + (knob.unit ? " " + knob.unit : "");
-}
-
-function buildRestoreButton(/** @type {import("./catalog.js").Knob} */ knob, /** @type {() => void} */ onReset) {
+/** Always mounted; CSS shows it only when value ≠ default. */
+function buildRestoreDefaultButton(/** @type {Entry} */ entry) {
+  const knob = entry.knob;
+  const opt = knob.options && knob.options.find((o) => o.value === knob.default);
+  const defShort = opt ? opt.label : String(knob.default) + (knob.unit ? " " + knob.unit : "");
+  const tip = "Restore built-in default (" + defShort + ")";
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "set-restore";
   btn.dataset.activate = "release";
   btn.textContent = "Restore default";
-  const tip = "Restore built-in default (" + defaultShort(knob) + ")";
   btn.title = tip;
   btn.setAttribute("aria-label", tip);
   btn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    onReset();
+    entry.overridden = false;
+    entry.value = knob.default;
+    entry.render();
+    recompute();
   });
   return btn;
 }
@@ -942,16 +940,7 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
   if (!knob.options) main.appendChild(row);
 
   // Toggles omit Restore — flip back to the built-in value clears the override.
-  if (knob.type !== "bool") {
-    main.appendChild(
-      buildRestoreButton(knob, () => {
-        entry.overridden = false;
-        entry.value = knob.default;
-        entry.render();
-        recompute();
-      }),
-    );
-  }
+  if (knob.type !== "bool") main.appendChild(buildRestoreDefaultButton(entry));
 
   ctl.appendChild(main);
   entry.render(); // initialise the control from entry.value (the default at build time)

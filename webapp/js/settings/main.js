@@ -94,7 +94,6 @@ function textEl(tag, className, text) {
   return node;
 }
 
-/** Short built-in value for the restore link / tooltip. */
 function defaultShort(/** @type {import("./catalog.js").Knob} */ knob) {
   if (knob.type === "bool") return knob.default ? "on" : "off";
   if (knob.options) {
@@ -624,11 +623,7 @@ function renderSearchResults(
   }
 }
 
-/**
- * Cluster consecutive knobs that share a `subsection` label.
- * @param {import("./catalog.js").Knob[]} knobs
- * @returns {{ title: string | null, knobs: import("./catalog.js").Knob[] }[]}
- */
+/** @param {import("./catalog.js").Knob[]} knobs @returns {{ title: string | null, knobs: import("./catalog.js").Knob[] }[]} */
 function clusterBySubsection(knobs) {
   /** @type {{ title: string | null, knobs: import("./catalog.js").Knob[] }[]} */
   const clusters = [];
@@ -842,7 +837,6 @@ function buildScalarControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */
     };
     input.addEventListener("input", () => editScalar(entry, input.value));
   } else {
-    // Number field: value + unit share one bordered shell (unit as in-field suffix).
     const wrap = textEl("div", "set-num-wrap");
     const input = document.createElement("input");
     // type=text (not number) so the decimal separator always renders as a dot,

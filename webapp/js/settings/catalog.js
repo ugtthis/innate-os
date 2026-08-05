@@ -278,7 +278,6 @@ for (const group of CATALOG) {
   }
 }
 
-/** Resolve stable knob ids to the shared Knob objects from CATALOG. */
 function knobs(/** @type {string[]} */ ...ids) {
   return ids.map((id) => {
     const knob = KNOBS_BY_ID.get(id);

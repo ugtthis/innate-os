@@ -60,7 +60,6 @@ const pages = [];
  */
 /** @type {SearchTarget[]} */
 const searchTargets = [];
-/** Page shell; toggles `.is-detail` for the index → detail drill-in. */
 /** @type {HTMLElement | null} */
 let bodyEl = null;
 
@@ -105,7 +104,6 @@ function defaultShort(/** @type {import("./catalog.js").Knob} */ knob) {
   return String(knob.default) + (knob.unit ? " " + knob.unit : "");
 }
 
-/** Build the on-release "Restore default" action under a control. */
 function buildRestoreButton(/** @type {import("./catalog.js").Knob} */ knob, /** @type {() => void} */ onReset) {
   const btn = document.createElement("button");
   btn.type = "button";
@@ -156,17 +154,14 @@ function isDirty(/** @type {Entry} */ e) {
   return e.overridden && e.value !== e.savedValue;
 }
 
-/** True when the form value matches the built-in default (restore would be a no-op). */
 function isAtDefault(/** @type {Entry} */ e) {
   return e.value === e.knob.default;
 }
 
-/** Mark overridden from the current value — at default means no override. */
 function setOverrideFromValue(/** @type {Entry} */ e) {
   e.overridden = !isAtDefault(e);
 }
 
-/** Commit a scalar control edit and refresh derived row/footer state. */
 function editScalar(/** @type {Entry} */ entry, /** @type {*} */ value) {
   entry.value = value;
   setOverrideFromValue(entry);
@@ -363,7 +358,6 @@ function buildVolumeSection() {
 const INDEX_CHEV =
   '<svg class="set-index-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9,6 15,12 9,18"/></svg>';
 
-/** Open a destination's detail pane (Linear drill-in). */
 function selectPage(/** @type {PageUI} */ ui) {
   for (const page of pages) {
     const on = page === ui;
@@ -388,7 +382,6 @@ function build() {
 
   const wrap = textEl("div", "settings-wrap");
 
-  // —— Index: six task-oriented destinations + direct knob search ——
   const index = textEl("div", "set-index");
 
   const indexTitle = textEl("h1", "page-title", "Preferences");
@@ -421,7 +414,6 @@ function build() {
     }
   };
 
-  // —— Detail: back + one active pane ——
   const detail = textEl("div", "set-detail");
 
   const back = document.createElement("button");
@@ -540,10 +532,7 @@ function build() {
   setStatus("Loading current values…");
 }
 
-/**
- * Linear-style flat section: heading + optional note + preference card.
- * @param {import("./catalog.js").PageSection} pageSection
- */
+/** @param {import("./catalog.js").PageSection} pageSection */
 function buildPageSection(pageSection) {
   const section = textEl("section", "set-page-section");
   const title = textEl("h2", "set-section-title", pageSection.title);
@@ -636,8 +625,7 @@ function renderSearchResults(
 }
 
 /**
- * Cluster consecutive knobs that share a `subsection` label so the expanded
- * card can render Midday/iOS-style subheads without nesting the catalog.
+ * Cluster consecutive knobs that share a `subsection` label.
  * @param {import("./catalog.js").Knob[]} knobs
  * @returns {{ title: string | null, knobs: import("./catalog.js").Knob[] }[]}
  */
@@ -653,7 +641,6 @@ function clusterBySubsection(knobs) {
   return clusters;
 }
 
-/** One bordered card for an expanded section; optional subsection blocks inside. */
 function buildGroupCard(/** @type {import("./catalog.js").Knob[]} */ knobs) {
   const card = textEl("div", "set-card");
   const clusters = clusterBySubsection(knobs);
@@ -723,7 +710,6 @@ function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
   return row;
 }
 
-/** Focus / open / toggle the primary control in a settings row. */
 function activateRowControl(/** @type {HTMLElement} */ row) {
   const el = row.querySelector(
     "input.set-num, input.set-text, input[type=checkbox], input[type=range], select.set-text",

@@ -11,7 +11,6 @@ export const SETTINGS_STYLE = `
 .settings-wrap .page-title { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
 .settings-note { color: var(--muted, #8a90a0); font-size: 13px; margin: 0 0 22px; line-height: 1.5; }
 
-/* Index (clustered cards) ↔ detail drill-in */
 .set-index { display: block; }
 .set-detail { display: none; }
 .settings-body.is-detail .set-index { display: none; }
@@ -66,7 +65,6 @@ export const SETTINGS_STYLE = `
   color: inherit; font: inherit; }
 .set-search-empty { margin: 0; padding: 18px 16px; color: var(--muted, #8a90a0); font-size: 13px; }
 
-/* Preference card — Linear: soft border, label left / control right */
 .set-page-section { margin: 0 0 28px; }
 .set-section-title { margin: 0 0 9px; padding: 0 2px; font-size: 13px; font-weight: 600;
   color: var(--text, #e7e7ea); letter-spacing: -.01em; }
@@ -105,7 +103,6 @@ export const SETTINGS_STYLE = `
 .set-doc-link { color: var(--primary, #7569FD); text-decoration: none; }
 .set-doc-link:hover { text-decoration: underline; }
 
-/* Control column — field on top; "Restore default" link appears under it when overridden */
 .set-ctl { display: flex; align-items: center; justify-content: flex-end;
   min-width: 0; box-sizing: border-box; }
 .set-ctl-main { display: flex; flex-direction: column; align-items: stretch; gap: 5px;
@@ -123,7 +120,6 @@ export const SETTINGS_STYLE = `
 .set-num-wrap .set-unit { flex: none; color: var(--muted, #8a90a0); font-size: 12px; white-space: nowrap; }
 .set-ctl-row > .set-unit { color: var(--muted, #8a90a0); font-size: 12px; white-space: nowrap; }
 
-/* Linear-style toggle */
 .set-ctl input[type=checkbox] { appearance: none; -webkit-appearance: none; position: relative;
   width: 36px; height: 20px; margin: 0; border-radius: 999px; cursor: pointer;
   background: rgba(255,255,255,.12); border: none; transition: background .15s ease; flex: none; }

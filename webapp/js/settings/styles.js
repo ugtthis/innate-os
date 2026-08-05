@@ -11,7 +11,6 @@ export const SETTINGS_STYLE = `
 .settings-wrap .page-title { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
 .settings-note { color: var(--muted, #8a90a0); font-size: 13px; margin: 0 0 22px; line-height: 1.5; }
 
-.set-index { display: block; }
 .set-detail { display: none; }
 .settings-body.is-detail .set-index { display: none; }
 .settings-body.is-detail .set-detail { display: block; }
@@ -116,10 +115,9 @@ export const SETTINGS_STYLE = `
 .set-ctl { display: flex; align-items: center; justify-content: flex-end;
   min-width: 0; box-sizing: border-box; }
 .set-ctl-main { display: flex; flex-direction: column; align-items: stretch; gap: 5px;
-  width: 116px; min-width: 116px; flex: none; overflow: visible; position: relative; }
+  width: 116px; min-width: 116px; flex: none; }
 .set-ctl-main.is-wide { width: 200px; min-width: 200px; }
 .set-ctl-main.is-toggle { width: auto; min-width: 0; align-items: flex-end; }
-.set-row-toggle { align-items: center; }
 .set-ctl-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; width: 100%; }
 .set-num-wrap { display: flex; align-items: center; gap: 5px; box-sizing: border-box;
   width: 100%; padding: 5px 8px; border-radius: 6px; cursor: text;
@@ -138,7 +136,6 @@ export const SETTINGS_STYLE = `
   transition: transform .15s ease; box-shadow: 0 1px 2px rgba(0,0,0,.35); }
 .set-ctl input[type=checkbox]:checked { background: var(--primary, #7569FD); }
 .set-ctl input[type=checkbox]:checked::after { transform: translateX(16px); }
-.set-ctl input[type=checkbox]:disabled { opacity: .4; cursor: default; }
 
 /* Per-row restore. Slot always reserved; visible only when value ≠ default. */
 .set-restore { display: block; visibility: hidden; pointer-events: none;
@@ -179,9 +176,8 @@ export const SETTINGS_STYLE = `
 .set-slider { width: 100%; accent-color: var(--primary, #7569FD); }
 .set-slider-read { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; flex: none; }
 .set-slider-read .mx { color: var(--muted, #8a90a0); }
-.set-card-volume .set-row { border-bottom: none; padding: 16px 20px; grid-template-columns: minmax(0, 1fr) auto; }
+.set-card-volume .set-row { border-bottom: none; padding: 16px 20px; }
 .set-card-volume .set-row:hover { background: none; }
-.set-card-volume .set-ctl { width: auto; align-items: center; }
 .set-card-volume-status { font-size: 12px; margin-left: 6px; }
 .set-card-volume .set-slider { width: min(180px, 28vw); }
 
@@ -203,7 +199,7 @@ export const SETTINGS_STYLE = `
   .set-ctl-main { width: 116px; min-width: 116px; }
   .set-ctl-main.is-wide { width: min(200px, 100%); min-width: 0; }
   /* Toggles stay label | switch — stacking them under the copy looks wrong. */
-  .set-row-toggle { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .set-row-toggle { grid-template-columns: minmax(0, 1fr) auto; }
   .set-row-toggle .set-ctl { width: auto; justify-content: flex-end; }
   .set-card-volume .set-row { padding: 14px; grid-template-columns: 1fr; }
   .set-index-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

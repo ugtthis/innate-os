@@ -55,11 +55,14 @@ const pages = [];
  * @typedef {Object} SearchTarget
  * @property {Entry} entry
  * @property {PageUI} page
- * @property {string} context
- * @property {string} haystack
+ * @property {string} breadcrumb
+ * @property {string} visibleSearchText  Label, description, and breadcrumb.
+ * @property {{label: string, text: string}[]} extraSearchSources
+ * @property {string} searchText  All searchable text, lowercased.
  */
 /** @type {SearchTarget[]} */
 const searchTargets = [];
+const MAX_SEARCH_RESULTS = 20;
 /** @type {HTMLElement | null} */
 let bodyEl = null;
 
@@ -393,6 +396,7 @@ function build() {
   search.type = "search";
   search.className = "set-search";
   search.placeholder = "Search settings";
+  search.maxLength = 40;
   search.setAttribute("aria-label", "Search settings");
   index.appendChild(search);
 
@@ -474,19 +478,26 @@ function build() {
       panel.appendChild(buildPageSection(pageSection));
       const sectionEntries = entries.slice(sectionStart);
       ui.entries.push(...sectionEntries);
-      const context = `${settingsPage.title} · ${pageSection.title}`;
+      const breadcrumb = `${settingsPage.title} · ${pageSection.title}`;
+      const extraSearchSources = [
+        { label: "Matched in section description", text: pageSection.note || "" },
+        { label: "Matched in page description", text: settingsPage.summary },
+      ].filter((source) => source.text);
       for (const entry of sectionEntries) {
+        const visibleSearchText = [
+          breadcrumb,
+          entry.knob.label,
+          entry.knob.doc,
+        ].join(" ").toLowerCase();
         searchTargets.push({
           entry,
           page: ui,
-          context,
-          haystack: [
-            settingsPage.title,
-            settingsPage.summary,
-            pageSection.title,
-            pageSection.note || "",
-            entry.knob.label,
-            entry.knob.doc,
+          breadcrumb,
+          visibleSearchText,
+          extraSearchSources,
+          searchText: [
+            visibleSearchText,
+            ...extraSearchSources.map((source) => source.text),
           ].join(" ").toLowerCase(),
         });
       }
@@ -569,6 +580,19 @@ function setHighlightedText(el, text, terms) {
   if (last < text.length) el.append(text.slice(last));
 }
 
+function searchResultRank(
+  /** @type {SearchTarget} */ target,
+  /** @type {string} */ normalizedQuery,
+  /** @type {string[]} */ terms,
+) {
+  const labelText = target.entry.knob.label.toLowerCase();
+  const descriptionText = target.entry.knob.doc.toLowerCase();
+  if (labelText === normalizedQuery) return 0;
+  if (terms.every((term) => labelText.includes(term))) return 1;
+  if (terms.every((term) => descriptionText.includes(term))) return 2;
+  return 3;
+}
+
 /**
  * Replace the destination index with direct knob matches while searching.
  * Clicking a result opens the owning destination, then focuses the matching
@@ -579,7 +603,8 @@ function renderSearchResults(
   /** @type {HTMLElement} */ indexCard,
   /** @type {HTMLElement} */ results,
 ) {
-  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const normalizedQuery = query.trim().toLowerCase();
+  const terms = normalizedQuery.split(/\s+/).filter(Boolean);
   const searching = terms.length > 0;
   indexCard.hidden = searching;
   results.hidden = !searching;
@@ -587,8 +612,13 @@ function renderSearchResults(
   if (!searching) return;
 
   const matches = searchTargets
-    .filter((target) => terms.every((term) => target.haystack.includes(term)))
-    .slice(0, 20);
+    .filter((target) => terms.every((term) => target.searchText.includes(term)))
+    .sort(
+      (a, b) =>
+        searchResultRank(a, normalizedQuery, terms) -
+        searchResultRank(b, normalizedQuery, terms),
+    )
+    .slice(0, MAX_SEARCH_RESULTS);
 
   if (!matches.length) {
     const empty = textEl("p", "set-search-empty", "No matching settings");
@@ -602,9 +632,25 @@ function renderSearchResults(
     result.className = "set-search-result";
     const label = textEl("span", "set-search-label");
     setHighlightedText(label, target.entry.knob.label, terms);
-    const context = textEl("span", "set-search-context");
-    setHighlightedText(context, target.context, terms);
-    result.append(label, context);
+    const description = textEl("span", "set-search-doc");
+    setHighlightedText(description, target.entry.knob.doc, terms);
+    const breadcrumb = textEl("span", "set-search-context");
+    setHighlightedText(breadcrumb, target.breadcrumb, terms);
+    result.append(label, description, breadcrumb);
+
+    let termsNotShown = terms.filter((term) => !target.visibleSearchText.includes(term));
+    for (const source of target.extraSearchSources) {
+      const sourceSearchText = source.text.toLowerCase();
+      const showsMissingTerm = termsNotShown.some((term) => sourceSearchText.includes(term));
+      if (!showsMissingTerm) continue;
+      const matchedSource = textEl("span", "set-search-source");
+      matchedSource.appendChild(textEl("span", "set-search-source-kind", source.label));
+      const matchedSourceText = textEl("span", "set-search-source-text");
+      setHighlightedText(matchedSourceText, source.text, terms);
+      matchedSource.appendChild(matchedSourceText);
+      result.appendChild(matchedSource);
+      termsNotShown = termsNotShown.filter((term) => !sourceSearchText.includes(term));
+    }
     result.addEventListener("click", () => {
       selectPage(target.page);
       requestAnimationFrame(() => {

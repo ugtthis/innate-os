@@ -61,8 +61,18 @@ export const SETTINGS_STYLE = `
   background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .set-search-result:last-child { border-bottom: none; }
 .set-search-result:hover { background: rgba(255,255,255,.035); }
-.set-search-label { display: block; font-size: 13px; font-weight: 500; }
-.set-search-context { display: block; margin-top: 2px; color: var(--muted, #8a90a0); font-size: 11px; }
+.set-search-label { display: block; color: var(--text, #e7e7ea); font-size: 14px;
+  font-weight: 600; line-height: 1.3; }
+.set-search-doc { display: block; margin-top: 4px; color: var(--muted, #8a90a0);
+  font-size: 12px; font-weight: 400; line-height: 1.45; }
+.set-search-context { display: block; margin-top: 5px; color: var(--muted, #8a90a0);
+  font-size: 11px; font-weight: 500; line-height: 1.3; opacity: .78; }
+.set-search-source { display: block; margin-top: 7px; padding: 7px 9px;
+  border-radius: 5px; background: rgba(117,105,253,.07);
+  color: var(--muted, #8a90a0); font-size: 11px; line-height: 1.45; }
+.set-search-source-kind { display: block; margin-bottom: 2px; color: var(--text, #e7e7ea);
+  font-size: 9px; font-weight: 600; letter-spacing: .045em; text-transform: uppercase; opacity: .68; }
+.set-search-source-text { display: block; }
 .set-search-mark { padding: 0 1px; border-radius: 2px; background: rgba(117,105,253,.32);
   color: inherit; font: inherit; }
 .set-search-empty { margin: 0; padding: 18px 16px; color: var(--muted, #8a90a0); font-size: 13px; }

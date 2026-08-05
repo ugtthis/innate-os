@@ -53,7 +53,9 @@ const entries = [];
 const pages = [];
 /**
  * @typedef {Object} SearchTarget
- * @property {Entry} entry
+ * @property {string} label
+ * @property {string} description
+ * @property {HTMLElement} row
  * @property {PageUI} page
  * @property {string} breadcrumb
  * @property {string} visibleSearchText  Label, description, and breadcrumb.
@@ -95,6 +97,21 @@ function textEl(tag, className, text) {
   node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+function addSearchTarget(
+  /** @type {Omit<SearchTarget, "visibleSearchText" | "searchText">} */ target,
+) {
+  const visibleSearchText = [target.breadcrumb, target.label, target.description]
+    .join(" ")
+    .toLowerCase();
+  searchTargets.push({
+    ...target,
+    visibleSearchText,
+    searchText: [visibleSearchText, ...target.extraSearchSources.map((source) => source.text)]
+      .join(" ")
+      .toLowerCase(),
+  });
 }
 
 function defaultShort(/** @type {import("./catalog.js").Knob} */ knob) {
@@ -227,15 +244,18 @@ function clampVolume(/** @type {number} */ value) {
  * The slider is the raw volume_percent (0–100): it reads the current value from
  * /robot/info and writes via /set_volume on release. The robot lifts the low end
  * of the range so the bottom of the slider stays audible (see apply_alsa_volume).
+ * @returns {{section: HTMLElement, row: HTMLElement, label: string, description: string}}
  */
 function buildVolumeSection() {
+  const labelText = "Speaker volume";
+  const descriptionText = "The robot's voice volume. Applies immediately — no restart.";
   const section = textEl("section", "set-card-volume");
 
   const row = textEl("div", "set-row");
 
   const info = textEl("div", "set-info");
-  const label = textEl("span", "set-label", "Speaker volume");
-  const doc = textEl("span", "set-doc", "The robot's voice volume. Applies immediately — no restart.");
+  const label = textEl("span", "set-label", labelText);
+  const doc = textEl("span", "set-doc", descriptionText);
   info.append(label, doc);
   row.appendChild(info);
 
@@ -354,7 +374,7 @@ function buildVolumeSection() {
     }
   });
 
-  return section;
+  return { section, row, label: labelText, description: descriptionText };
 }
 
 const INDEX_CHEV =
@@ -461,10 +481,15 @@ function build() {
       panel.appendChild(gn);
     }
 
-    if (settingsPage.hasSpeakerVolume) {
+    const pageSearchSource = {
+      label: "Matched in page description",
+      text: settingsPage.summary,
+    };
+    const volumeControl = settingsPage.hasSpeakerVolume ? buildVolumeSection() : null;
+    if (volumeControl) {
       const speaker = textEl("section", "set-page-section");
       const speakerTitle = textEl("h2", "set-section-title", "Speaker");
-      speaker.append(speakerTitle, buildVolumeSection());
+      speaker.append(speakerTitle, volumeControl.section);
       panel.appendChild(speaker);
     }
 
@@ -472,6 +497,17 @@ function build() {
     const ui = { panel, row, dot, entries: [] };
     row.addEventListener("click", () => selectPage(ui));
     pages.push(ui);
+
+    if (volumeControl) {
+      addSearchTarget({
+        label: volumeControl.label,
+        description: volumeControl.description,
+        row: volumeControl.row,
+        page: ui,
+        breadcrumb: `${settingsPage.title} · Speaker`,
+        extraSearchSources: [pageSearchSource],
+      });
+    }
 
     for (const pageSection of settingsPage.sections) {
       const sectionStart = entries.length;
@@ -481,24 +517,16 @@ function build() {
       const breadcrumb = `${settingsPage.title} · ${pageSection.title}`;
       const extraSearchSources = [
         { label: "Matched in section description", text: pageSection.note || "" },
-        { label: "Matched in page description", text: settingsPage.summary },
+        pageSearchSource,
       ].filter((source) => source.text);
       for (const entry of sectionEntries) {
-        const visibleSearchText = [
-          breadcrumb,
-          entry.knob.label,
-          entry.knob.doc,
-        ].join(" ").toLowerCase();
-        searchTargets.push({
-          entry,
+        addSearchTarget({
+          label: entry.knob.label,
+          description: entry.knob.doc,
+          row: entry.row,
           page: ui,
           breadcrumb,
-          visibleSearchText,
           extraSearchSources,
-          searchText: [
-            visibleSearchText,
-            ...extraSearchSources.map((source) => source.text),
-          ].join(" ").toLowerCase(),
         });
       }
     }
@@ -585,8 +613,8 @@ function searchResultRank(
   /** @type {string} */ normalizedQuery,
   /** @type {string[]} */ terms,
 ) {
-  const labelText = target.entry.knob.label.toLowerCase();
-  const descriptionText = target.entry.knob.doc.toLowerCase();
+  const labelText = target.label.toLowerCase();
+  const descriptionText = target.description.toLowerCase();
   if (labelText === normalizedQuery) return 0;
   if (terms.every((term) => labelText.includes(term))) return 1;
   if (terms.every((term) => descriptionText.includes(term))) return 2;
@@ -631,9 +659,9 @@ function renderSearchResults(
     result.type = "button";
     result.className = "set-search-result";
     const label = textEl("span", "set-search-label");
-    setHighlightedText(label, target.entry.knob.label, terms);
+    setHighlightedText(label, target.label, terms);
     const description = textEl("span", "set-search-doc");
-    setHighlightedText(description, target.entry.knob.doc, terms);
+    setHighlightedText(description, target.description, terms);
     const breadcrumb = textEl("span", "set-search-context");
     setHighlightedText(breadcrumb, target.breadcrumb, terms);
     result.append(label, description, breadcrumb);
@@ -654,13 +682,13 @@ function renderSearchResults(
     result.addEventListener("click", () => {
       selectPage(target.page);
       requestAnimationFrame(() => {
-        target.entry.row.scrollIntoView({ block: "center", behavior: "smooth" });
-        const control = target.entry.row.querySelector("input, select, textarea, button");
+        target.row.scrollIntoView({ block: "center", behavior: "smooth" });
+        const control = target.row.querySelector("input, select, textarea, button");
         if (control instanceof HTMLElement) control.focus({ preventScroll: true });
-        target.entry.row.classList.add("search-hit");
-        target.entry.row.addEventListener(
+        target.row.classList.add("search-hit");
+        target.row.addEventListener(
           "animationend",
-          () => target.entry.row.classList.remove("search-hit"),
+          () => target.row.classList.remove("search-hit"),
           { once: true },
         );
       });

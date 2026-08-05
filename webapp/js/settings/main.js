@@ -562,16 +562,42 @@ function build() {
   setStatus("Loading current values…");
 }
 
+/** @param {import("./catalog.js").Knob[]} knobs */
+function splitSubsectionGroups(knobs) {
+  /** @type {{ title: string | null, knobs: import("./catalog.js").Knob[] }[]} */
+  const groups = [];
+  for (const knob of knobs) {
+    const subsection = knob.subsection || null;
+    const last = groups[groups.length - 1];
+    if (last && last.title === subsection) last.knobs.push(knob);
+    else groups.push({ title: subsection, knobs: [knob] });
+  }
+  return groups;
+}
+
 /** @param {import("./catalog.js").PageSection} pageSection */
 function buildPageSection(pageSection) {
   const section = textEl("section", "set-page-section");
-  const title = textEl("h2", "set-section-title", pageSection.title);
-  section.appendChild(title);
+  section.appendChild(textEl("h2", "set-section-title", pageSection.title));
   if (pageSection.note) {
-    const note = textEl("p", "set-section-note", pageSection.note);
-    section.appendChild(note);
+    section.appendChild(textEl("p", "set-section-note", pageSection.note));
   }
-  section.appendChild(buildGroupCard(pageSection.knobs));
+
+  const card = textEl("div", "set-card");
+  const groups = splitSubsectionGroups(pageSection.knobs);
+  const showSubsectionTitles = groups.filter((group) => group.title).length > 1;
+  for (const group of groups) {
+    /** @type {HTMLElement} */
+    let host = card;
+    if (showSubsectionTitles) {
+      const block = textEl("div", "set-subblock");
+      if (group.title) block.appendChild(textEl("div", "set-subh", group.title));
+      card.appendChild(block);
+      host = block;
+    }
+    for (const knob of group.knobs) host.appendChild(buildRow(knob));
+  }
+  section.appendChild(card);
   return section;
 }
 
@@ -687,41 +713,6 @@ function renderSearchResults(
     });
     results.appendChild(result);
   }
-}
-
-/** @param {import("./catalog.js").Knob[]} knobs @returns {{ title: string | null, knobs: import("./catalog.js").Knob[] }[]} */
-function clusterBySubsection(knobs) {
-  /** @type {{ title: string | null, knobs: import("./catalog.js").Knob[] }[]} */
-  const clusters = [];
-  for (const knob of knobs) {
-    const title = knob.subsection || null;
-    const last = clusters[clusters.length - 1];
-    if (last && last.title === title) last.knobs.push(knob);
-    else clusters.push({ title, knobs: [knob] });
-  }
-  return clusters;
-}
-
-function buildGroupCard(/** @type {import("./catalog.js").Knob[]} */ knobs) {
-  const card = textEl("div", "set-card");
-  const clusters = clusterBySubsection(knobs);
-  const useSubheads = clusters.filter((c) => c.title).length > 1;
-
-  for (const cluster of clusters) {
-    /** @type {HTMLElement} */
-    let host = card;
-    if (useSubheads) {
-      const block = textEl("div", "set-subblock");
-      if (cluster.title) {
-        const subh = textEl("div", "set-subh", cluster.title);
-        block.appendChild(subh);
-      }
-      card.appendChild(block);
-      host = block;
-    }
-    for (const knob of cluster.knobs) host.appendChild(buildRow(knob));
-  }
-  return card;
 }
 
 function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {

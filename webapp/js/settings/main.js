@@ -944,7 +944,7 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
     });
   }
 
-  if ((knob.type === "int" || knob.type === "float") && !isSlider && (knob.min !== undefined || knob.max !== undefined)) {
+  if ((knob.type === "int" || knob.type === "float") && !isSlider) {
     const err = textEl("span", "set-err");
     entry.errEl = err;
     main.appendChild(err); // above the field so it doesn't sit under Restore

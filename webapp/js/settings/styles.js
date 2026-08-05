@@ -171,9 +171,27 @@ export const SETTINGS_STYLE = `
   font: inherit; font-size: 13px; }
 .set-ctl :is(input, select).set-text:focus { outline: none; border-color: rgba(117,105,253,.55); background: rgba(0,0,0,.2); }
 .set-ctl select.set-text { cursor: pointer; }
-.set-slider { width: 100%; border-radius: 4px; accent-color: var(--primary, #7569FD); }
-/* Kill the global amber :focus-visible */
-.set-slider:focus-visible { outline: 1px solid rgba(117,105,253,.55); outline-offset: 6px; }
+/* Custom range; content-box keeps the 10px center inside the 4px thumb border. */
+.set-slider { -webkit-appearance: none; appearance: none;
+  width: 100%; height: 20px; margin: 0;
+  background: transparent; cursor: pointer; }
+.set-slider::-webkit-slider-runnable-track { height: 6px; border-radius: 999px;
+  background: linear-gradient(to right, var(--primary, #7569FD) 0 var(--set-slider-fill),
+    rgba(255,255,255,.18) var(--set-slider-fill) 100%); }
+.set-slider::-moz-range-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,.18); }
+.set-slider::-moz-range-progress { height: 6px; border-radius: 999px; background: var(--primary, #7569FD); }
+.set-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 10px;
+  margin-top: -6px; box-sizing: content-box; border: 4px solid var(--primary, #7569FD);
+  border-radius: 50%; background: var(--text, #e7e7ea); }
+.set-slider::-moz-range-thumb { width: 10px; height: 10px; box-sizing: content-box;
+  border: 4px solid var(--primary, #7569FD); border-radius: 50%; background: var(--text, #e7e7ea); }
+.set-slider:active:not(:disabled)::-webkit-slider-thumb { background: var(--primary, #7569FD); }
+.set-slider:active:not(:disabled)::-moz-range-thumb { background: var(--primary, #7569FD); }
+/* Ring for Tab / row-click only — .is-pointer is set while dragging. */
+.set-slider:focus { outline: none; }
+.set-slider:focus-visible:not(.is-pointer) { outline: 1px solid rgba(117,105,253,.75);
+  outline-offset: 6px; border-radius: 4px; }
+.set-slider:disabled { opacity: .4; cursor: default; }
 .set-slider-read { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; flex: none; }
 .set-slider-read .mx { color: var(--muted, #8a90a0); }
 .set-card-volume .set-row { border-bottom: none; }

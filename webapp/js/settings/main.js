@@ -228,6 +228,26 @@ function clampVolume(/** @type {number} */ value) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function syncSliderFill(/** @type {HTMLInputElement} */ slider) {
+  const min = Number(slider.min);
+  const percent = ((Number(slider.value) - min) / (Number(slider.max) - min)) * 100;
+  slider.style.setProperty("--set-slider-fill", `${percent}%`);
+}
+
+/** One-time setup: sync fill on input, track pointer so the focus ring can hide. */
+function initSlider(/** @type {HTMLInputElement} */ slider) {
+  syncSliderFill(slider);
+  slider.addEventListener("input", () => syncSliderFill(slider));
+  slider.addEventListener("pointerdown", () => slider.classList.add("is-pointer"));
+  slider.addEventListener("blur", () => slider.classList.remove("is-pointer"));
+}
+
+/** Focus for row-click / search: show the ring, clearing any prior pointer grab. */
+function focusControl(/** @type {HTMLElement} */ el, /** @type {FocusOptions} */ opts = {}) {
+  el.classList.remove("is-pointer");
+  el.focus({ focusVisible: true, ...opts });
+}
+
 /**
  * Live speaker-volume control. Unlike the yaml knobs below, this is a rosbridge
  * service call that applies immediately and persists on the robot — no restart.
@@ -261,6 +281,7 @@ function buildVolumeSection() {
   // "—" and the slider stays disabled, so this isn't read as a real setting.
   slider.value = "50";
   slider.disabled = true;
+  initSlider(slider);
   ctl.appendChild(slider);
 
   const read = textEl("span", "set-slider-read");
@@ -290,6 +311,7 @@ function buildVolumeSection() {
 
   const renderValue = (/** @type {number} */ percent) => {
     slider.value = String(percent);
+    syncSliderFill(slider);
     cur.textContent = String(percent);
     mx.textContent = " / 100";
   };
@@ -703,7 +725,7 @@ function renderSearchResults(
       requestAnimationFrame(() => {
         target.row.scrollIntoView({ block: "center", behavior: "smooth" });
         const control = target.row.querySelector("input, select, textarea, button");
-        if (control instanceof HTMLElement) control.focus({ preventScroll: true });
+        if (control instanceof HTMLElement) focusControl(control, { preventScroll: true });
         target.row.classList.add("search-hit");
         target.row.addEventListener(
           "animationend",
@@ -776,7 +798,7 @@ function activateRowControl(/** @type {HTMLElement} */ row) {
     el.click();
     return;
   }
-  el.focus();
+  focusControl(el);
   if (el instanceof HTMLSelectElement) {
     el.click();
     return;
@@ -813,6 +835,7 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
     slider.min = String(knob.min ?? 0);
     slider.max = String(knob.max);
     slider.step = String(knob.step ?? (knob.type === "int" ? 1 : 1));
+    initSlider(slider);
     row.appendChild(slider);
 
     // "<value> / <max>" — the max is always shown so the ceiling is obvious.
@@ -828,6 +851,7 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
 
     entry.render = () => {
       slider.value = String(entry.value);
+      syncSliderFill(slider);
       cur.textContent = String(entry.value);
     };
     slider.addEventListener("input", () => {

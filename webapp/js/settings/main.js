@@ -173,17 +173,9 @@ function isDirty(/** @type {Entry} */ e) {
   return e.overridden && e.value !== e.savedValue;
 }
 
-function isAtDefault(/** @type {Entry} */ e) {
-  return e.value === e.knob.default;
-}
-
-function setOverrideFromValue(/** @type {Entry} */ e) {
-  e.overridden = !isAtDefault(e);
-}
-
 function editScalar(/** @type {Entry} */ entry, /** @type {*} */ value) {
   entry.value = value;
-  setOverrideFromValue(entry);
+  entry.overridden = entry.value !== entry.knob.default;
   recompute();
 }
 
@@ -203,7 +195,7 @@ function recompute() {
     e.row.classList.toggle("saved", !d && e.overridden);
     // Restore tracks value≠default, not dirty/saved — otherwise flipping a toggle
     // back to default still showed Restore and clicking it felt broken.
-    e.row.classList.toggle("off-default", !isAtDefault(e));
+    e.row.classList.toggle("off-default", e.value !== e.knob.default);
     if (e.errEl) e.errEl.textContent = err;
   }
   for (const page of pages) {

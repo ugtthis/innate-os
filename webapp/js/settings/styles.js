@@ -116,6 +116,7 @@ export const SETTINGS_STYLE = `
 .set-ctl-main { display: flex; flex-direction: column; align-items: stretch; gap: 5px;
   width: 116px; min-width: 116px; flex: none; }
 .set-ctl-main.is-wide { width: 200px; min-width: 200px; }
+.set-ctl-main.is-slider { transform: translateY(9px); }
 .set-ctl-main.is-toggle { width: auto; min-width: 0; align-items: flex-end; }
 .set-ctl-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; width: 100%; }
 .set-num-wrap { display: flex; align-items: center; gap: 5px; box-sizing: border-box;
@@ -192,11 +193,12 @@ export const SETTINGS_STYLE = `
 .set-slider:focus-visible:not(.is-pointer) { outline: 1px solid rgba(117,105,253,.75);
   outline-offset: 6px; border-radius: 4px; }
 .set-slider:disabled { opacity: .4; cursor: default; }
-.set-slider-read { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; flex: none; }
-.set-slider-read .mx { color: var(--muted, #8a90a0); }
+.set-slider-wrap { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.set-slider-read { color: var(--text, #e7e7ea); font-size: 16px; font-weight: 600;
+  font-variant-numeric: tabular-nums; line-height: 1.2; text-align: center; }
 .set-card-volume .set-row { border-bottom: none; }
 .set-card-volume-status { font-size: 12px; margin-left: 6px; }
-.set-card-volume .set-slider { width: min(180px, 28vw); }
+.set-card-volume .set-slider-wrap { width: min(180px, 28vw); }
 
 @media (max-width: 720px) {
   .settings-wrap { padding: 20px 18px 36px; }
@@ -214,6 +216,10 @@ export const SETTINGS_STYLE = `
   .set-doc { max-width: none; }
   .set-ctl { width: 100%; justify-content: flex-start; }
   .set-ctl-main.is-wide { width: min(200px, 100%); min-width: 0; }
+  .set-ctl-main.is-slider { width: 100%; transform: none; }
+  .set-card-volume .set-ctl { flex-direction: column; align-items: stretch; }
+  .set-card-volume .set-slider-wrap { width: 100%; }
+  .set-card-volume-status { margin-left: 0; text-align: center; }
   /* Toggles stay label | switch — stacking them under the copy looks wrong. */
   .set-row-toggle { grid-template-columns: minmax(0, 1fr) auto; }
   .set-row-toggle .set-ctl { width: auto; justify-content: flex-end; }

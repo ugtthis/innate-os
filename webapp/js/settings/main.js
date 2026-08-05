@@ -282,14 +282,12 @@ function buildVolumeSection() {
   slider.value = "50";
   slider.disabled = true;
   initSlider(slider);
-  ctl.appendChild(slider);
 
   const read = textEl("span", "set-slider-read");
-  const cur = document.createElement("span");
-  cur.textContent = "—"; // nothing until /robot/info reports the live volume
-  const mx = textEl("span", "mx");
-  read.append(cur, mx);
-  ctl.appendChild(read);
+  read.textContent = "—"; // nothing until /robot/info reports the live volume
+  const sliderWrap = textEl("div", "set-slider-wrap");
+  sliderWrap.append(read, slider);
+  ctl.appendChild(sliderWrap);
 
   const status = textEl("span", "set-card-volume-status set-status muted");
   ctl.appendChild(status);
@@ -312,8 +310,7 @@ function buildVolumeSection() {
   const renderValue = (/** @type {number} */ percent) => {
     slider.value = String(percent);
     syncSliderFill(slider);
-    cur.textContent = String(percent);
-    mx.textContent = " / 100";
+    read.textContent = percent + "%";
   };
 
   // Disabled until connected AND the live volume has loaded (so the page never
@@ -357,7 +354,7 @@ function buildVolumeSection() {
 
   slider.addEventListener("input", () => {
     dragging = true;
-    cur.textContent = slider.value;
+    read.textContent = slider.value + "%";
   });
 
   slider.addEventListener("change", async () => {
@@ -817,6 +814,7 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
   const main = textEl("div", "set-ctl-main");
   if (knob.type === "bool") main.classList.add("is-toggle");
   else if (knob.options || knob.type === "string" || isSlider) main.classList.add("is-wide");
+  if (isSlider) main.classList.add("is-slider");
 
   const row = textEl("div", "set-ctl-row");
 
@@ -836,27 +834,22 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
     slider.max = String(knob.max);
     slider.step = String(knob.step ?? (knob.type === "int" ? 1 : 1));
     initSlider(slider);
-    row.appendChild(slider);
 
-    // "<value> / <max>" — the max is always shown so the ceiling is obvious.
     const read = textEl("span", "set-slider-read");
-    const cur = document.createElement("span");
-    const mx = textEl("span", "mx", " / " + knob.max);
-    read.append(cur, mx);
-    row.appendChild(read);
-    if (knob.unit) {
-      const unit = textEl("span", "set-unit", knob.unit);
-      row.appendChild(unit);
-    }
+    const suffix = knob.unit ? (knob.unit === "%" ? "%" : " " + knob.unit) : "";
+    const renderRead = (/** @type {number} */ value) => (read.textContent = value + suffix);
+    const sliderWrap = textEl("div", "set-slider-wrap");
+    sliderWrap.append(read, slider);
+    row.appendChild(sliderWrap);
 
     entry.render = () => {
       slider.value = String(entry.value);
       syncSliderFill(slider);
-      cur.textContent = String(entry.value);
+      renderRead(entry.value);
     };
     slider.addEventListener("input", () => {
       const value = Number(slider.value);
-      cur.textContent = String(value);
+      renderRead(value);
       setKnobValue(entry, value);
     });
   } else if (knob.options) {

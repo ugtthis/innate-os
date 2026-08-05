@@ -125,7 +125,7 @@ export const SETTINGS_PAGES = [
         ],
       },
       {
-        title: "Handling",
+        title: "Handling (app / webapp joystick)",
         note: "How quickly the robot approaches the caps above — app / webapp joystick only; the USB gamepad has its own smoother. All apply immediately except the tick rate. The jerk limits are derived from these, so there is nothing to keep consistent by hand.",
         knobs: [
           { path: ["mars_app", P, "motion_control", "max_acceleration"], label: "Linear acceleration", default: 0.2, type: "float", unit: "m/s²", doc: "How hard it speeds up", min: 0.05, max: 5, live: "/mars_app", subsection: "Linear" },

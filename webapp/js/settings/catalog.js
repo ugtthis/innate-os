@@ -269,7 +269,7 @@ export const SETTINGS_PAGES = [
     sections: [
       {
         title: "Sensing",
-        note: "What the brain client sends to the Innate agent. The model fields are also set on the realtime voice loop below — change both so the chat-TTS and realtime-voice paths stay in sync.",
+        note: "What the brain client sends to the Innate agent.",
         knobs: [
           { path: ["brain_client_node", P, "vertical_fov"], label: "Camera vertical FOV", default: 80, type: "float", unit: "°", doc: "Camera vertical field of view" },
           { path: ["brain_client_node", P, "pose_image_interval"], label: "Pose-image interval", default: 0.5, type: "float", unit: "s", doc: "Seconds between pose-image sends" },

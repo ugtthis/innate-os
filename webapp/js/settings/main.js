@@ -226,7 +226,7 @@ function clampVolume(/** @type {number} */ value) {
  * of the range so the bottom of the slider stays audible (see apply_alsa_volume).
  */
 function buildVolumeSection() {
-  const section = textEl("section", "set-live");
+  const section = textEl("section", "set-card-volume");
 
   const row = textEl("div", "set-row");
 
@@ -257,7 +257,7 @@ function buildVolumeSection() {
   read.append(cur, mx);
   ctl.appendChild(read);
 
-  const status = textEl("span", "set-live-status set-status muted");
+  const status = textEl("span", "set-card-volume-status set-status muted");
   ctl.appendChild(status);
 
   row.appendChild(ctl);
@@ -271,7 +271,7 @@ function buildVolumeSection() {
 
   const setLiveStatus = (/** @type {string} */ msg, /** @type {string} */ cls) => {
     status.textContent = msg;
-    status.className = "set-live-status set-status " + cls;
+    status.className = "set-card-volume-status set-status " + cls;
   };
 
   const renderValue = (/** @type {number} */ percent) => {
@@ -396,10 +396,10 @@ function build() {
   search.setAttribute("aria-label", "Search settings");
   index.appendChild(search);
 
-  const indexCard = textEl("div", "set-index-card");
+  const indexCard = textEl("div", "set-card-index");
   index.appendChild(indexCard);
 
-  const searchResults = textEl("div", "set-search-results");
+  const searchResults = textEl("div", "set-card-search");
   searchResults.hidden = true;
   index.appendChild(searchResults);
 

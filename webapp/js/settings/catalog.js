@@ -106,22 +106,17 @@ export const SETTINGS_PAGES = [
     icon: "joystick.svg",
     title: "Driving",
     summary: "Speed, handling, and manual controls",
-    note: "Tune manual and autonomous motion. Speed limits first; handling and heading hold further down.",
+    note: "Tune manual and autonomous motion. Speed controls first; handling and heading hold further down.",
     sections: [
       {
-        title: "Speed limits",
-        note: "Manual (teleop) and autonomous (nav) are capped independently. Neither is the hard ceiling — the safety clamp below is.",
+        title: "Speed controls",
+        note: "Set manual (teleop) and autonomous (nav) operating caps independently; slow mode scales manual speed. Final motor limits are under Safety & hardware.",
         knobs: [
           { path: ["/**", P, "motion_control", "max_speed"], label: "Manual max speed", default: 0.4, type: "float", unit: "m/s", doc: "Top translational speed for teleop / manual driving", min: 0.05, max: 2, live: "/mars_app", subsection: "Manual" },
           { path: ["/**", P, "motion_control", "max_angular_speed"], label: "Manual max turn", default: 1, type: "float", unit: "rad/s", doc: "Top rotational speed for teleop / manual driving", min: 0.05, max: 5, live: "/mars_app", subsection: "Manual" },
+          { path: ["joystick_controller", P, "joystick", "slow_mode_factor"], label: "Slow-mode factor", default: 0.25, type: "float", doc: "Speed multiplier while the slow-mode button is held", subsection: "Manual" },
           { path: ["/**", P, "nav", "max_speed"], label: "Autonomous max speed", default: 0.45, type: "float", unit: "m/s", doc: "Top translational speed for autonomous nav2", min: 0.05, max: 2, subsection: "Autonomous" },
           { path: ["/**", P, "nav", "max_angular_speed"], label: "Autonomous max turn", default: 0.6, type: "float", unit: "rad/s", doc: "Top rotational speed for autonomous nav2", min: 0.05, max: 5, subsection: "Autonomous" },
-        ],
-      },
-      {
-        title: "Manual controls",
-        knobs: [
-          { path: ["joystick_controller", P, "joystick", "slow_mode_factor"], label: "Slow-mode factor", default: 0.25, type: "float", doc: "Speed multiplier while the slow-mode button is held" },
         ],
       },
       {
@@ -169,8 +164,8 @@ export const SETTINGS_PAGES = [
     note: "Configure the robot's physical backstops and hardware behavior.",
     sections: [
       {
-        title: "Safety limits",
-        note: "The hardware ceiling every velocity source passes through at the motors. Keep these ≥ the driving caps above.",
+        title: "Motor safety limits",
+        note: "Final backstop applied to every velocity source. Keep these above normal operating caps in Driving and Autonomy unless intentionally enforcing a lower hard limit.",
         knobs: [
           { path: ["bringup", P, "safety", "max_speed"], label: "Hard max speed", default: 0.8, type: "float", unit: "m/s", doc: "Hard /cmd_vel linear ceiling at the motors" },
           { path: ["bringup", P, "safety", "max_angular_speed"], label: "Hard max turn", default: 2.5, type: "float", unit: "rad/s", doc: "Hard /cmd_vel angular ceiling at the motors" },
@@ -279,20 +274,19 @@ export const SETTINGS_PAGES = [
         ],
       },
       {
-        title: "Diagnostics & models",
-        note: "Brain client. The model fields are also set on the realtime voice loop below — change both so the chat-TTS and realtime-voice paths stay in sync.",
+        title: "AI models",
+        note: "The brain-runtime and realtime-voice paths use separate fields. Keep each matching model pair in sync.",
         knobs: [
-          { path: ["brain_client_node", P, "log_everything"], label: "Verbose logging", default: true, type: "bool", doc: "Verbose vision-agent output logging" },
-          { path: ["brain_client_node", P, "openai_realtime_model"], label: "Realtime model", default: "gpt-4o-realtime-preview", type: "string", doc: "OpenAI realtime model" },
-          { path: ["brain_client_node", P, "openai_transcribe_model"], label: "Transcribe model", default: "gpt-4o-mini-transcribe", type: "string", doc: "OpenAI transcription model" },
+          { path: ["brain_client_node", P, "openai_realtime_model"], label: "Realtime model", default: "gpt-4o-realtime-preview", type: "string", doc: "OpenAI realtime model", subsection: "Brain runtime" },
+          { path: ["brain_client_node", P, "openai_transcribe_model"], label: "Transcribe model", default: "gpt-4o-mini-transcribe", type: "string", doc: "OpenAI transcription model", subsection: "Brain runtime" },
+          { path: ["input_manager_node", P, "openai_realtime_model"], label: "Realtime model", default: "gpt-4o-realtime-preview", type: "string", doc: "OpenAI realtime model", subsection: "Realtime voice" },
+          { path: ["input_manager_node", P, "openai_transcribe_model"], label: "Transcribe model", default: "gpt-4o-mini-transcribe", type: "string", doc: "OpenAI transcription model", subsection: "Realtime voice" },
         ],
       },
       {
-        title: "Speech models",
-        note: "Keep these values in sync with the matching brain-client model fields above.",
+        title: "Diagnostics",
         knobs: [
-          { path: ["input_manager_node", P, "openai_realtime_model"], label: "Realtime model", default: "gpt-4o-realtime-preview", type: "string", doc: "OpenAI realtime model" },
-          { path: ["input_manager_node", P, "openai_transcribe_model"], label: "Transcribe model", default: "gpt-4o-mini-transcribe", type: "string", doc: "OpenAI transcription model" },
+          { path: ["brain_client_node", P, "log_everything"], label: "Verbose logging", default: true, type: "bool", doc: "Verbose vision-agent output logging" },
         ],
       },
     ],

@@ -193,7 +193,7 @@ function recompute() {
     e.row.classList.toggle("saved", !d && e.overridden);
     // Restore tracks value≠default, not dirty/saved — otherwise flipping a toggle
     // back to default still showed Restore and clicking it felt broken.
-    e.row.classList.toggle("off-default", e.value !== e.knob.default);
+    e.row.classList.toggle("has-override", e.value !== e.knob.default);
     if (e.errEl) e.errEl.textContent = err;
   }
   for (const page of pages) {

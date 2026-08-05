@@ -141,7 +141,7 @@ export const SETTINGS_STYLE = `
   border: none; background: none; font: inherit; font-size: 11px; font-weight: 500;
   color: var(--muted, #8a90a0); cursor: pointer; line-height: 1.2; text-align: right;
   white-space: nowrap; min-height: 1.2em; }
-.set-row.off-default .set-restore { visibility: visible; pointer-events: auto; }
+.set-row.has-override .set-restore { visibility: visible; pointer-events: auto; }
 .set-restore:hover { color: var(--primary, #7569FD); }
 .set-restore:focus-visible { outline: none; color: var(--primary, #7569FD);
   text-decoration: underline; }

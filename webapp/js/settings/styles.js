@@ -171,7 +171,9 @@ export const SETTINGS_STYLE = `
   font: inherit; font-size: 13px; }
 .set-ctl :is(input, select).set-text:focus { outline: none; border-color: rgba(117,105,253,.55); background: rgba(0,0,0,.2); }
 .set-ctl select.set-text { cursor: pointer; }
-.set-slider { width: 100%; accent-color: var(--primary, #7569FD); }
+.set-slider { width: 100%; border-radius: 4px; accent-color: var(--primary, #7569FD); }
+/* Kill the global amber :focus-visible */
+.set-slider:focus-visible { outline: 1px solid rgba(117,105,253,.55); outline-offset: 6px; }
 .set-slider-read { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; flex: none; }
 .set-slider-read .mx { color: var(--muted, #8a90a0); }
 .set-card-volume .set-row { border-bottom: none; }

@@ -235,7 +235,7 @@ export const SETTINGS_PAGES = [
         ],
       },
       {
-        title: "Vision-language navigation",
+        title: "Vision-language navigation (UniNavid)",
         note: "Vision-language navigation. UniNavid drives in discrete action bursts with its own speed knobs — separate from nav and teleop; the safety clamp is still the ceiling.",
         knobs: [
           { path: ["uninavid_node", P, "forward_speed"], label: "Forward speed", default: 0.3, type: "float", unit: "m/s", doc: "FORWARD action speed", subsection: "Motion" },

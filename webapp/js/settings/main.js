@@ -787,29 +787,28 @@ function activateRowControl(/** @type {HTMLElement} */ row) {
   }
 }
 
-/** Build the knob's input control (bool, slider, select, string, or number). */
-function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ entry) {
+function buildKnobControl(/** @type {HTMLElement} */ controlContainer, /** @type {Entry} */ entry) {
   const knob = entry.knob;
   const isSlider =
     (knob.type === "int" || knob.type === "float") && knob.slider === true && knob.max !== undefined;
 
-  const main = textEl("div", "set-ctl-main");
-  if (knob.type === "bool") main.classList.add("is-toggle");
-  else if (knob.options || knob.type === "string" || isSlider) main.classList.add("is-wide");
-  if (isSlider) main.classList.add("is-slider");
+  const controlGroup = textEl("div", "set-ctl-main");
+  if (knob.type === "bool") controlGroup.classList.add("is-toggle");
+  else if (knob.options || knob.type === "string" || isSlider) controlGroup.classList.add("is-wide");
+  if (isSlider) controlGroup.classList.add("is-slider");
 
-  const row = textEl("div", "set-ctl-row");
+  const controlRow = textEl("div", "set-ctl-row");
   if (knob.type !== "bool") {
     const validation = textEl("span", "set-validation-slot");
     if ((knob.type === "int" || knob.type === "float") && !isSlider) {
       entry.validationEl = validation;
     }
-    main.appendChild(validation);
+    controlGroup.appendChild(validation);
   }
 
   if (knob.type === "bool") {
     const input = inputEl("checkbox");
-    row.appendChild(input);
+    controlRow.appendChild(input);
     entry.render = () => {
       input.checked = Boolean(entry.value);
     };
@@ -821,78 +820,78 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
     slider.step = String(knob.step ?? 1);
     initSlider(slider);
 
-    const read = textEl("span", "set-slider-read");
+    const valueLabel = textEl("span", "set-slider-read");
     const suffix = knob.unit ? (knob.unit === "%" ? "%" : " " + knob.unit) : "";
-    const renderRead = (/** @type {number} */ value) => (read.textContent = value + suffix);
-    const sliderWrap = textEl("div", "set-slider-wrap");
-    sliderWrap.append(read, slider);
-    row.appendChild(sliderWrap);
+    const renderValue = (/** @type {number} */ value) => (valueLabel.textContent = value + suffix);
+    const sliderContainer = textEl("div", "set-slider-wrap");
+    sliderContainer.append(valueLabel, slider);
+    controlRow.appendChild(sliderContainer);
 
     entry.render = () => {
       slider.value = String(entry.value);
       syncSliderFill(slider);
-      renderRead(entry.value);
+      renderValue(entry.value);
     };
     slider.addEventListener("input", () => {
       const value = Number(slider.value);
-      renderRead(value);
+      renderValue(value);
       setKnobValue(entry, value);
     });
   } else if (knob.options) {
     const options = knob.options; // capture: the closures below can't re-narrow it
-    const CUSTOM = "__custom__";
+    const CUSTOM_OPTION_VALUE = "__custom__";
     const select = document.createElement("select");
     select.className = "set-text";
-    for (const opt of options) {
-      select.add(new Option(opt.label, opt.value));
+    for (const option of options) {
+      select.add(new Option(option.label, option.value));
     }
     // A permanent "Custom…" choice that reveals a free-text field for any off-list value
     // (e.g. a voice id pasted from Cartesia's library, or one set over SSH).
-    select.add(new Option("Custom…", CUSTOM));
-    row.appendChild(select);
+    select.add(new Option("Custom…", CUSTOM_OPTION_VALUE));
+    controlRow.appendChild(select);
 
-    const custom = inputEl("text", "set-text");
-    custom.placeholder = "Paste a voice ID";
-    custom.style.display = "none";
+    const customInput = inputEl("text", "set-text");
+    customInput.placeholder = "Paste a voice ID";
+    customInput.style.display = "none";
 
-    const isStock = () => options.some((o) => o.value === entry.value);
+    const isStockOption = () => options.some((option) => option.value === entry.value);
     entry.render = () => {
-      const stock = isStock();
-      select.value = stock ? String(entry.value) : CUSTOM;
-      custom.value = stock ? "" : String(entry.value);
-      custom.style.display = stock ? "none" : "";
+      const usesStockOption = isStockOption();
+      select.value = usesStockOption ? String(entry.value) : CUSTOM_OPTION_VALUE;
+      customInput.value = usesStockOption ? "" : String(entry.value);
+      customInput.style.display = usesStockOption ? "none" : "";
     };
     select.addEventListener("change", () => {
-      const custable = select.value === CUSTOM;
-      custom.style.display = custable ? "" : "none";
-      if (custable) {
+      const usesCustomValue = select.value === CUSTOM_OPTION_VALUE;
+      customInput.style.display = usesCustomValue ? "" : "none";
+      if (usesCustomValue) {
         // Just reveal the field — don't commit an empty id. The input handler
         // commits once the user actually types one.
-        custom.focus();
+        customInput.focus();
         return;
       }
       setKnobValue(entry, select.value);
     });
-    custom.addEventListener("input", () => {
+    customInput.addEventListener("input", () => {
       // An empty id is never valid (it breaks TTS), so it isn't a real override.
-      if (custom.value === "") {
+      if (customInput.value === "") {
         entry.value = "";
         entry.overridden = false;
         recompute();
       } else {
-        setKnobValue(entry, custom.value);
+        setKnobValue(entry, customInput.value);
       }
     });
-    main.append(row, custom);
+    controlGroup.append(controlRow, customInput);
   } else if (knob.type === "string") {
     const input = inputEl("text", "set-text");
-    row.appendChild(input);
+    controlRow.appendChild(input);
     entry.render = () => {
       input.value = String(entry.value);
     };
     input.addEventListener("input", () => setKnobValue(entry, input.value));
   } else {
-    const wrap = textEl("div", "set-num-wrap");
+    const numberInputContainer = textEl("div", "set-num-wrap");
     const input = inputEl("text", "set-num");
     // type=text (not number) so the decimal separator always renders as a dot,
     // regardless of the browser/OS locale; inputmode keeps the mobile numpad.
@@ -900,13 +899,13 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
     if (knob.min !== undefined && knob.max !== undefined) {
       input.title = `Built-in default ${knob.default}` + (knob.unit ? ` ${knob.unit}` : "") + ` · range ${knob.min}–${knob.max}`;
     }
-    wrap.appendChild(input);
+    numberInputContainer.appendChild(input);
     if (knob.unit) {
-      wrap.appendChild(textEl("span", "set-unit", knob.unit));
+      numberInputContainer.appendChild(textEl("span", "set-unit", knob.unit));
     }
-    row.appendChild(wrap);
-    wrap.addEventListener("click", (e) => {
-      if (e.target !== input) input.focus();
+    controlRow.appendChild(numberInputContainer);
+    numberInputContainer.addEventListener("click", (event) => {
+      if (event.target !== input) input.focus();
     });
     entry.render = () => {
       input.value = String(entry.value);
@@ -917,10 +916,10 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
     });
   }
 
-  if (!knob.options) main.appendChild(row);
-  if (knob.type !== "bool") main.appendChild(buildRestoreDefaultButton(entry));
+  if (!knob.options) controlGroup.appendChild(controlRow);
+  if (knob.type !== "bool") controlGroup.appendChild(buildRestoreDefaultButton(entry));
 
-  ctl.appendChild(main);
+  controlContainer.appendChild(controlGroup);
   entry.render(); // initialise the control from entry.value (the default at build time)
 }
 

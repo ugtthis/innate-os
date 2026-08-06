@@ -1,11 +1,11 @@
 // @ts-check
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Innate Inc
-// Operator-facing Settings tree: destinations → sections → knobs. Each knob's
-// `path` is the full ROS param path in settings.yaml (node, then
-// ros__parameters, then nested groups, then the key). The proxy edits
-// settings.yaml surgically by this path, so the file stays a hand-editable
-// overlay (uncomment a stanza over SSH still works).
+// Operator-facing Settings tree and the single source for UI defaults and docs.
+// Each knob's `path` is its full ROS parameter path in settings.yaml: node,
+// `ros__parameters`, nested groups, then the key. The proxy edits only that
+// path, preserving the hand-editable overlay: operators can still uncomment
+// or edit stanzas directly over SSH.
 //
 // Curated subset. The `default` values below are the values the robot actually
 // LAUNCHES with — verified against each node's loaded config, NOT just its own
@@ -20,10 +20,9 @@
 // both nodes' TTS voice default to the same env-backed id; temporal_ensemble_coeff
 // is 0.0 and consecutive_stops_to_complete is 30 per the loaded YAMLs).
 //
-// Add a knob under the destination section where operators should find it. The
-// renderer picks the control from type metadata. `inflation_layer` is
-// intentionally omitted — its default differs per costmap (0.25/0.3/0.35), so
-// there's no honest single default to show.
+// To expose a setting, add its knob under the matching SETTINGS_PAGES section;
+// `type` selects the control. `inflation_layer` stays omitted because its
+// default varies by costmap (0.25/0.3/0.35), so no single UI default is correct.
 
 /**
  * @typedef {Object} Knob

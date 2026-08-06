@@ -98,11 +98,9 @@ export const SETTINGS_STYLE = `
 .set-row.invalid .set-num-wrap { border-color: rgba(233,86,86,.8); }
 @keyframes set-search-hit { 0%, 35% { background: rgba(117,105,253,.16); } 100% { background: transparent; } }
 .set-row.search-hit { animation: set-search-hit 1.4s ease-out; }
-/* Error + restore always keep their row height (visibility, not display) so
-   popping them in doesn't shove neighboring rows. */
-.set-err { font-size: 11px; font-weight: 500; color: #e95656; text-align: right; line-height: 1.2;
+.set-validation-slot { font-size: 11px; font-weight: 500; color: #e95656; text-align: right; line-height: 1.2;
   white-space: nowrap; align-self: flex-end; min-height: 1.2em; visibility: hidden; }
-.set-err:not(:empty) { visibility: visible; }
+.set-validation-slot:not(:empty) { visibility: visible; }
 .set-dirty.set-bad { color: #e95656; }
 .set-info { min-width: 0; padding-right: 8px; }
 .set-label { display: block; font-size: 13px; font-weight: 500; line-height: 1.35; }
@@ -116,7 +114,6 @@ export const SETTINGS_STYLE = `
 .set-ctl-main { display: flex; flex-direction: column; align-items: stretch; gap: 5px;
   width: 116px; min-width: 116px; flex: none; }
 .set-ctl-main.is-wide { width: 200px; min-width: 200px; }
-.set-ctl-main.is-slider { transform: translateY(9px); }
 .set-ctl-main.is-toggle { width: auto; min-width: 0; align-items: flex-end; }
 .set-ctl-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; width: 100%; }
 .set-num-wrap { display: flex; align-items: center; gap: 5px; box-sizing: border-box;
@@ -217,7 +214,7 @@ export const SETTINGS_STYLE = `
   .set-doc { max-width: none; }
   .set-ctl { width: 100%; justify-content: flex-start; }
   .set-ctl-main.is-wide { width: min(200px, 100%); min-width: 0; }
-  .set-ctl-main.is-slider { width: 100%; transform: none; }
+  .set-ctl-main.is-slider { width: 100%; }
   .set-card-volume .set-ctl-main { width: 100%; min-width: 0; }
   /* Toggles stay label | switch — stacking them under the copy looks wrong. */
   .set-row-toggle { grid-template-columns: minmax(0, 1fr) auto; }

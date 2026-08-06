@@ -37,7 +37,7 @@ let cleanups = [];
  * @property {*} savedValue
  * @property {() => void} render  Push value + overridden state into the DOM control.
  * @property {HTMLElement} row
- * @property {HTMLElement} [errEl]  Out-of-range message; absent on non-numeric knobs.
+ * @property {HTMLElement} [validationEl]
  */
 /** @type {Entry[]} */
 const entries = [];
@@ -194,7 +194,7 @@ function recompute() {
     // Restore tracks value≠default, not dirty/saved — otherwise flipping a toggle
     // back to default still showed Restore and clicking it felt broken.
     e.row.classList.toggle("has-override", e.value !== e.knob.default);
-    if (e.errEl) e.errEl.textContent = err;
+    if (e.validationEl) e.validationEl.textContent = err;
   }
   for (const page of pages) {
     // Index rows stay quiet — purple dot alone marks unsaved work in the destination.
@@ -290,7 +290,7 @@ function buildVolumeSection() {
   sliderWrap.append(read, slider);
 
   const status = textEl("span", "set-card-volume-status set-status muted");
-  main.append(sliderWrap, status);
+  main.append(textEl("span", "set-validation-slot"), sliderWrap, status);
   ctl.appendChild(main);
 
   row.appendChild(ctl);
@@ -818,6 +818,13 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
   if (isSlider) main.classList.add("is-slider");
 
   const row = textEl("div", "set-ctl-row");
+  if (knob.type !== "bool") {
+    const validation = textEl("span", "set-validation-slot");
+    if ((knob.type === "int" || knob.type === "float") && !isSlider) {
+      entry.validationEl = validation;
+    }
+    main.appendChild(validation);
+  }
 
   if (knob.type === "bool") {
     const input = document.createElement("input");
@@ -945,15 +952,7 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
     });
   }
 
-  if ((knob.type === "int" || knob.type === "float") && !isSlider) {
-    const err = textEl("span", "set-err");
-    entry.errEl = err;
-    main.appendChild(err); // above the field so it doesn't sit under Restore
-  }
-
   if (!knob.options) main.appendChild(row);
-
-  // Toggles omit Restore — flip back to the built-in value clears the override.
   if (knob.type !== "bool") main.appendChild(buildRestoreDefaultButton(entry));
 
   ctl.appendChild(main);

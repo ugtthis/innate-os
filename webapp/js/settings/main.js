@@ -660,25 +660,20 @@ function searchResultRank(
   return 3;
 }
 
-/**
- * Replace the destination index with direct knob matches while searching.
- * Clicking a result opens the owning destination, then focuses the matching
- * control without changing its value.
- */
 function renderSearchResults(
   /** @type {string} */ query,
   /** @type {HTMLElement} */ indexCard,
-  /** @type {HTMLElement} */ results,
+  /** @type {HTMLElement} */ resultsContainer,
 ) {
   const normalizedQuery = query.trim().toLowerCase();
   const terms = normalizedQuery.split(/\s+/).filter(Boolean);
-  const searching = terms.length > 0;
-  indexCard.hidden = searching;
-  results.hidden = !searching;
-  results.replaceChildren();
-  if (!searching) return;
+  const hasSearchTerms = terms.length > 0;
+  indexCard.hidden = hasSearchTerms;
+  resultsContainer.hidden = !hasSearchTerms;
+  resultsContainer.replaceChildren();
+  if (!hasSearchTerms) return;
 
-  const matches = searchTargets
+  const matchingTargets = searchTargets
     .filter((target) => terms.every((term) => target.searchText.includes(term)))
     .sort(
       (a, b) =>
@@ -687,43 +682,43 @@ function renderSearchResults(
     )
     .slice(0, MAX_SEARCH_RESULTS);
 
-  if (!matches.length) {
-    const empty = textEl("p", "set-search-empty", "No matching settings");
-    results.appendChild(empty);
+  if (!matchingTargets.length) {
+    const emptyMessage = textEl("p", "set-search-empty", "No matching settings");
+    resultsContainer.appendChild(emptyMessage);
     return;
   }
 
-  for (const target of matches) {
-    const result = document.createElement("button");
-    result.type = "button";
-    result.className = "set-search-result";
+  for (const target of matchingTargets) {
+    const resultButton = document.createElement("button");
+    resultButton.type = "button";
+    resultButton.className = "set-search-result";
     const label = textEl("span", "set-search-label");
     setHighlightedText(label, target.label, terms);
     const description = textEl("span", "set-search-doc");
     setHighlightedText(description, target.description, terms);
     const breadcrumb = textEl("span", "set-search-context");
     setHighlightedText(breadcrumb, target.breadcrumb, terms);
-    result.append(label, description, breadcrumb);
+    resultButton.append(label, description, breadcrumb);
 
-    let termsNotShown = terms.filter((term) => !target.visibleSearchText.includes(term));
+    let unshownTerms = terms.filter((term) => !target.visibleSearchText.includes(term));
     for (const source of target.extraSearchSources) {
-      const sourceSearchText = source.text.toLowerCase();
-      const showsMissingTerm = termsNotShown.some((term) => sourceSearchText.includes(term));
-      if (!showsMissingTerm) continue;
+      const normalizedSourceText = source.text.toLowerCase();
+      const showsUnshownTerm = unshownTerms.some((term) => normalizedSourceText.includes(term));
+      if (!showsUnshownTerm) continue;
       const matchedSource = textEl("span", "set-search-source");
       matchedSource.appendChild(textEl("span", "set-search-source-kind", source.label));
       const matchedSourceText = textEl("span", "set-search-source-text");
       setHighlightedText(matchedSourceText, source.text, terms);
       matchedSource.appendChild(matchedSourceText);
-      result.appendChild(matchedSource);
-      termsNotShown = termsNotShown.filter((term) => !sourceSearchText.includes(term));
+      resultButton.appendChild(matchedSource);
+      unshownTerms = unshownTerms.filter((term) => !normalizedSourceText.includes(term));
     }
-    result.addEventListener("click", () => {
+    resultButton.addEventListener("click", () => {
       selectPage(target.page);
       requestAnimationFrame(() => {
         target.row.scrollIntoView({ block: "center", behavior: "smooth" });
-        const control = target.row.querySelector("input, select, textarea, button");
-        if (control instanceof HTMLElement) focusControl(control, { preventScroll: true });
+        const targetControl = target.row.querySelector("input, select, textarea, button");
+        if (targetControl instanceof HTMLElement) focusControl(targetControl, { preventScroll: true });
         target.row.classList.add("search-hit");
         target.row.addEventListener(
           "animationend",
@@ -732,7 +727,7 @@ function renderSearchResults(
         );
       });
     });
-    results.appendChild(result);
+    resultsContainer.appendChild(resultButton);
   }
 }
 

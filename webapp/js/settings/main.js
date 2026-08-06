@@ -76,14 +76,13 @@ let bodyEl = null;
 /** @type {HTMLElement} */ let dirtyEl;
 /** @type {HTMLElement} */ let statusEl;
 
-/** Walk a path into the nested overrides dict; undefined if absent. */
-function lookup(/** @type {any} */ obj, /** @type {string[]} */ p) {
-  let cur = obj;
-  for (const k of p) {
-    if (cur == null || typeof cur !== "object" || !(k in cur)) return undefined;
-    cur = cur[k];
+function getNestedValue(/** @type {any} */ obj, /** @type {string[]} */ path) {
+  let current = obj;
+  for (const key of path) {
+    if (current == null || typeof current !== "object" || !(key in current)) return undefined;
+    current = current[key];
   }
-  return cur;
+  return current;
 }
 
 function setStatus(/** @type {string} */ msg, /** @type {string} */ cls = "muted") {
@@ -934,7 +933,7 @@ async function load() {
   }
   const overrides = (data && data.overrides) || {};
   for (const e of entries) {
-    const v = lookup(overrides, e.knob.path);
+    const v = getNestedValue(overrides, e.knob.path);
     if (v === undefined) continue;
     const val = coerceLoaded(e.knob, v);
     e.overridden = e.savedOverridden = true;

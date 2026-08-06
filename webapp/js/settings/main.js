@@ -624,8 +624,7 @@ function buildPageSection(pageSection) {
 }
 
 /**
- * Fill an element with text, wrapping case-insensitive matches of `terms` in
- * <mark class="set-search-mark">. Uses Text nodes so query characters stay safe.
+ * Highlight via text nodes, never innerHTML (query stays safe).
  * @param {HTMLElement} el
  * @param {string} text
  * @param {string[]} terms  Lowercase search tokens already filtered for emptiness.

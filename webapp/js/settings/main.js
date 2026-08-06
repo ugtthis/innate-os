@@ -825,7 +825,7 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
     const slider = inputEl("range", "set-slider");
     slider.min = String(knob.min ?? 0);
     slider.max = String(knob.max);
-    slider.step = String(knob.step ?? (knob.type === "int" ? 1 : 1));
+    slider.step = String(knob.step ?? 1);
     initSlider(slider);
 
     const read = textEl("span", "set-slider-read");

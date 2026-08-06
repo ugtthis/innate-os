@@ -169,14 +169,10 @@ function buildRestoreDefaultButton(/** @type {Entry} */ entry) {
   return btn;
 }
 
-/**
- * Coerce an on-disk override value to the knob's JS type.
- * @returns {*}
- */
-function coerceLoaded(/** @type {import("./catalog.js").Knob} */ knob, /** @type {any} */ v) {
-  if (knob.type === "bool") return Boolean(v);
-  if (knob.type === "int" || knob.type === "float") return Number(v);
-  return String(v);
+function coerceToKnobType(/** @type {import("./catalog.js").Knob} */ knob, /** @type {any} */ value) {
+  if (knob.type === "bool") return Boolean(value);
+  if (knob.type === "int" || knob.type === "float") return Number(value);
+  return String(value);
 }
 
 /**
@@ -935,7 +931,7 @@ async function load() {
   for (const e of entries) {
     const v = getNestedValue(overrides, e.knob.path);
     if (v === undefined) continue;
-    const val = coerceLoaded(e.knob, v);
+    const val = coerceToKnobType(e.knob, v);
     e.overridden = e.savedOverridden = true;
     e.value = e.savedValue = val;
     e.render();

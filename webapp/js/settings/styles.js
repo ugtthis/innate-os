@@ -226,8 +226,4 @@ export const SETTINGS_STYLE = `
   .set-reset-all { margin-left: 0; order: 4; }
   .set-restart { order: 5; }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .set-row.search-hit { animation-duration: .01ms; }
-}
 `;

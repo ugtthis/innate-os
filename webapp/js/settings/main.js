@@ -270,6 +270,7 @@ function buildVolumeSection() {
   row.appendChild(info);
 
   const ctl = textEl("div", "set-ctl");
+  const main = textEl("div", "set-ctl-main is-wide");
 
   const slider = document.createElement("input");
   slider.type = "range";
@@ -287,10 +288,10 @@ function buildVolumeSection() {
   read.textContent = "—"; // nothing until /robot/info reports the live volume
   const sliderWrap = textEl("div", "set-slider-wrap");
   sliderWrap.append(read, slider);
-  ctl.appendChild(sliderWrap);
 
   const status = textEl("span", "set-card-volume-status set-status muted");
-  ctl.appendChild(status);
+  main.append(sliderWrap, status);
+  ctl.appendChild(main);
 
   row.appendChild(ctl);
   enableRowClick(row);

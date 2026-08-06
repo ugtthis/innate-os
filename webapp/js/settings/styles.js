@@ -196,9 +196,10 @@ export const SETTINGS_STYLE = `
 .set-slider-wrap { display: flex; flex-direction: column; gap: 5px; width: 100%; }
 .set-slider-read { color: var(--text, #e7e7ea); font-size: 16px; font-weight: 600;
   font-variant-numeric: tabular-nums; line-height: 1.2; text-align: center; }
+.set-slider-wrap:has(.set-slider:disabled) .set-slider-read { opacity: .4; }
 .set-card-volume .set-row { border-bottom: none; }
-.set-card-volume-status { font-size: 12px; margin-left: 6px; }
-.set-card-volume .set-slider-wrap { width: min(180px, 28vw); }
+.set-card-volume-status { align-self: flex-end; font-size: 11px; font-weight: 500;
+  line-height: 1.2; text-align: right; min-height: 1.2em; }
 
 @media (max-width: 720px) {
   .settings-wrap { padding: 20px 18px 36px; }
@@ -217,9 +218,7 @@ export const SETTINGS_STYLE = `
   .set-ctl { width: 100%; justify-content: flex-start; }
   .set-ctl-main.is-wide { width: min(200px, 100%); min-width: 0; }
   .set-ctl-main.is-slider { width: 100%; transform: none; }
-  .set-card-volume .set-ctl { flex-direction: column; align-items: stretch; }
-  .set-card-volume .set-slider-wrap { width: 100%; }
-  .set-card-volume-status { margin-left: 0; text-align: center; }
+  .set-card-volume .set-ctl-main { width: 100%; min-width: 0; }
   /* Toggles stay label | switch — stacking them under the copy looks wrong. */
   .set-row-toggle { grid-template-columns: minmax(0, 1fr) auto; }
   .set-row-toggle .set-ctl { width: auto; justify-content: flex-end; }

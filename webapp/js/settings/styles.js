@@ -191,7 +191,7 @@ export const SETTINGS_STYLE = `
 /* Ring for Tab / row-click only — .is-pointer is set while dragging. */
 .set-slider:focus { outline: none; }
 .set-slider:focus-visible:not(.is-pointer) { outline: 1px solid rgba(117,105,253,.75);
-  outline-offset: 6px; border-radius: 4px; }
+  outline-offset: 3px; border-radius: 2px; }
 .set-slider:disabled { opacity: .4; cursor: default; }
 .set-slider-wrap { display: flex; flex-direction: column; gap: 5px; width: 100%; }
 .set-slider-read { color: var(--text, #e7e7ea); font-size: 13px; font-weight: 600;

@@ -194,7 +194,7 @@ export const SETTINGS_STYLE = `
   outline-offset: 6px; border-radius: 4px; }
 .set-slider:disabled { opacity: .4; cursor: default; }
 .set-slider-wrap { display: flex; flex-direction: column; gap: 5px; width: 100%; }
-.set-slider-read { color: var(--text, #e7e7ea); font-size: 16px; font-weight: 600;
+.set-slider-read { color: var(--text, #e7e7ea); font-size: 13px; font-weight: 600;
   font-variant-numeric: tabular-nums; line-height: 1.2; text-align: center; }
 .set-slider-wrap:has(.set-slider:disabled) .set-slider-read { opacity: .4; }
 .set-card-volume .set-row { border-bottom: none; }

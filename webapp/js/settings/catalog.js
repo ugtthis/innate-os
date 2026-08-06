@@ -97,7 +97,7 @@ export const SETTINGS_PAGES = [
         title: "Robot voice",
         note: "The TTS voice drives both chat-TTS and realtime voice.",
         knobs: [
-          { path: ["/**", P, "cartesia_voice_id"], label: "TTS voice", default: "9fdaae0b-f885-4813-b589-3c07cf9d5fea", type: "string", doc: "Cartesia TTS voice (drives both chat-TTS and realtime-voice). Pick a stock voice, or paste any voice ID from Cartesia's library of hundreds.", docHref: "https://play.cartesia.ai/voices", docLinkText: "Browse Cartesia voices ↗", options: VOICE_OPTIONS },
+          { path: ["/**", P, "cartesia_voice_id"], label: "TTS voice", default: "9fdaae0b-f885-4813-b589-3c07cf9d5fea", type: "string", doc: "Cartesia TTS voice (drives both chat-TTS and realtime-voice). Pick a stock voice, or paste any voice ID from Cartesia's library of hundreds.", docHref: "https://play.cartesia.ai/voices", docLinkText: "Browse Cartesia voices\u00A0↗", options: VOICE_OPTIONS },
         ],
       },
     ],

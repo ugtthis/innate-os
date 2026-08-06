@@ -416,14 +416,14 @@ function buildVolumeSection() {
 const INDEX_CHEV =
   '<svg class="set-index-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9,6 15,12 9,18"/></svg>';
 
-function selectPage(/** @type {PageUI} */ ui) {
+function selectPage(/** @type {PageUI | null} */ ui) {
   for (const page of pages) {
     const on = page === ui;
     page.panel.classList.toggle("active", on);
     if (on) page.row.setAttribute("aria-current", "page");
     else page.row.removeAttribute("aria-current");
   }
-  bodyEl?.classList.add("is-detail");
+  bodyEl?.classList.toggle("is-detail", ui !== null);
 }
 
 function build() {
@@ -467,11 +467,7 @@ function build() {
   const returnToIndex = () => {
     search.value = "";
     renderSearchResults("", indexCard, searchResults);
-    bodyEl?.classList.remove("is-detail");
-    for (const page of pages) {
-      page.panel.classList.remove("active");
-      page.row.removeAttribute("aria-current");
-    }
+    selectPage(null);
   };
 
   const detail = textEl("div", "set-detail");

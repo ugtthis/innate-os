@@ -759,12 +759,11 @@ function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
   return row;
 }
 
-/** Whole row activates the control (label, padding, empty control column).
- *  Skip real controls, Restore, and doc links. */
+/** Clicking non-interactive row space activates its control. */
 function enableRowClick(/** @type {HTMLElement} */ row) {
-  row.addEventListener("click", (e) => {
-    const t = /** @type {HTMLElement} */ (e.target);
-    if (t.closest("a, button, input, select, textarea, label")) return;
+  row.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest("a, button, input, select, textarea, label")) return;
     activateRowControl(row);
   });
 }

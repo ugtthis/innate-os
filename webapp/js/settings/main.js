@@ -99,6 +99,43 @@ function textEl(tag, className, text) {
   return node;
 }
 
+/** @param {string} type @param {string} [className] */
+function inputEl(type, className = "") {
+  const input = document.createElement("input");
+  input.type = type;
+  input.className = className;
+  return input;
+}
+
+/** @param {string} className @param {string} text @param {(event: MouseEvent) => void} [onClick] */
+function buttonEl(className, text, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = text;
+  if (onClick) button.addEventListener("click", onClick);
+  return button;
+}
+
+function buildRowText(
+  /** @type {string} */ label,
+  /** @type {string} */ description,
+  /** @type {{href: string, text: string} | null} */ link = null,
+) {
+  const info = textEl("div", "set-info");
+  const doc = textEl("span", "set-doc", description);
+  if (link) {
+    doc.append(" ");
+    const anchor = textEl("a", "set-doc-link", link.text);
+    anchor.setAttribute("href", link.href);
+    anchor.setAttribute("target", "_blank");
+    anchor.setAttribute("rel", "noopener noreferrer");
+    doc.append(anchor);
+  }
+  info.append(textEl("span", "set-label", label), doc);
+  return info;
+}
+
 function addSearchTarget(
   /** @type {Omit<SearchTarget, "visibleSearchText" | "searchText">} */ target,
 ) {
@@ -120,20 +157,16 @@ function buildRestoreDefaultButton(/** @type {Entry} */ entry) {
   const opt = knob.options && knob.options.find((o) => o.value === knob.default);
   const defShort = opt ? opt.label : String(knob.default) + (knob.unit ? " " + knob.unit : "");
   const tip = "Restore built-in default (" + defShort + ")";
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "set-restore";
-  btn.dataset.activate = "release";
-  btn.textContent = "Restore default";
-  btn.title = tip;
-  btn.setAttribute("aria-label", tip);
-  btn.addEventListener("click", (ev) => {
-    ev.stopPropagation();
+  const btn = buttonEl("set-restore", "Restore default", (event) => {
+    event.stopPropagation();
     entry.overridden = false;
     entry.value = knob.default;
     entry.render();
     recompute();
   });
+  btn.dataset.activate = "release";
+  btn.title = tip;
+  btn.setAttribute("aria-label", tip);
   return btn;
 }
 
@@ -263,18 +296,10 @@ function buildVolumeSection() {
 
   const row = textEl("div", "set-row");
 
-  const info = textEl("div", "set-info");
-  const label = textEl("span", "set-label", labelText);
-  const doc = textEl("span", "set-doc", descriptionText);
-  info.append(label, doc);
-  row.appendChild(info);
-
   const ctl = textEl("div", "set-ctl");
   const main = textEl("div", "set-ctl-main is-wide");
 
-  const slider = document.createElement("input");
-  slider.type = "range";
-  slider.className = "set-slider";
+  const slider = inputEl("range", "set-slider");
   slider.min = "0";
   slider.max = "100";
   slider.step = "1";
@@ -293,7 +318,7 @@ function buildVolumeSection() {
   main.append(textEl("span", "set-validation-slot"), sliderWrap, status);
   ctl.appendChild(main);
 
-  row.appendChild(ctl);
+  row.append(buildRowText(labelText, descriptionText), ctl);
   enableRowClick(row);
   section.appendChild(row);
 
@@ -417,26 +442,27 @@ function build() {
 
   const index = textEl("div", "set-index");
 
-  const indexTitle = textEl("h1", "page-title", "Preferences");
-  index.appendChild(indexTitle);
-
-  const indexNote = textEl("p", "settings-note", "Tune how the robot drives, sees, and talks. Changes save to settings.yaml.");
-  index.appendChild(indexNote);
-
-  const search = document.createElement("input");
-  search.type = "search";
-  search.className = "set-search";
+  const search = inputEl("search", "set-search");
   search.placeholder = "Search settings";
   search.maxLength = 40;
   search.setAttribute("aria-label", "Search settings");
-  index.appendChild(search);
 
   const indexCard = textEl("div", "set-card-index");
-  index.appendChild(indexCard);
 
   const searchResults = textEl("div", "set-card-search");
   searchResults.hidden = true;
-  index.appendChild(searchResults);
+
+  index.append(
+    textEl("h1", "page-title", "Preferences"),
+    textEl(
+      "p",
+      "settings-note",
+      "Tune how the robot drives, sees, and talks. Changes save to settings.yaml.",
+    ),
+    search,
+    indexCard,
+    searchResults,
+  );
 
   const returnToIndex = () => {
     search.value = "";
@@ -450,18 +476,13 @@ function build() {
 
   const detail = textEl("div", "set-detail");
 
-  const back = document.createElement("button");
-  back.type = "button";
-  back.className = "set-back";
+  const back = buttonEl("set-back", "", returnToIndex);
   back.innerHTML =
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15,6 9,12 15,18"/></svg><span>Preferences</span>';
-  back.addEventListener("click", returnToIndex);
   detail.appendChild(back);
 
   for (const settingsPage of SETTINGS_PAGES) {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "set-index-row";
+    const row = buttonEl("set-index-row", "");
 
     const icon = textEl("span", "set-index-icon");
     icon.style.setProperty(
@@ -484,12 +505,10 @@ function build() {
     const panel = textEl("section", "set-pane");
     panel.setAttribute("aria-label", settingsPage.title);
 
-    const pageTitle = textEl("h1", "page-title", settingsPage.title);
-    panel.appendChild(pageTitle);
+    panel.appendChild(textEl("h1", "page-title", settingsPage.title));
 
     if (settingsPage.note) {
-      const gn = textEl("p", "settings-note", settingsPage.note);
-      panel.appendChild(gn);
+      panel.appendChild(textEl("p", "settings-note", settingsPage.note));
     }
 
     const pageSearchSource = {
@@ -554,29 +573,15 @@ function build() {
   page.appendChild(body);
 
   const bar = textEl("div", "set-bar");
-  saveBtn = document.createElement("button");
-  saveBtn.className = "set-save";
-  saveBtn.textContent = "Save";
+  saveBtn = buttonEl("set-save", "Save", onSave);
   saveBtn.disabled = true;
-  saveBtn.addEventListener("click", onSave);
-  dirtyEl = document.createElement("span");
-  dirtyEl.className = "set-dirty";
-  resetAllBtn = document.createElement("button");
-  resetAllBtn.className = "set-reset-all";
-  resetAllBtn.textContent = "Reset all to defaults";
+  dirtyEl = textEl("span", "set-dirty");
+  resetAllBtn = buttonEl("set-reset-all", "Reset all to defaults", resetAll);
   resetAllBtn.disabled = true;
-  resetAllBtn.addEventListener("click", resetAll);
-  restartBtn = document.createElement("button");
-  restartBtn.className = "set-restart";
-  restartBtn.textContent = "Restart robot";
+  restartBtn = buttonEl("set-restart", "Restart robot", onRestart);
   restartBtn.title = "Restart the robot to apply saved settings (same as innate restart)";
-  restartBtn.addEventListener("click", onRestart);
   statusEl = document.createElement("span");
-  bar.appendChild(saveBtn);
-  bar.appendChild(dirtyEl);
-  bar.appendChild(statusEl);
-  bar.appendChild(resetAllBtn);
-  bar.appendChild(restartBtn);
+  bar.append(saveBtn, dirtyEl, statusEl, resetAllBtn, restartBtn);
   page.appendChild(bar);
 
   stage.appendChild(page);
@@ -740,22 +745,6 @@ function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
   const row = textEl("div", "set-row");
   if (knob.type === "bool") row.classList.add("set-row-toggle");
 
-  const info = textEl("div", "set-info");
-  const label = textEl("span", "set-label", knob.label);
-  const doc = textEl("span", "set-doc", knob.doc);
-  if (knob.docHref) {
-    doc.append(" ");
-    const link = document.createElement("a");
-    link.className = "set-doc-link";
-    link.href = knob.docHref;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.textContent = knob.docLinkText || "Learn more";
-    doc.append(link);
-  }
-  info.append(label, doc);
-  row.appendChild(info);
-
   const ctl = textEl("div", "set-ctl");
 
   /** @type {Entry} */
@@ -770,8 +759,11 @@ function buildRow(/** @type {import("./catalog.js").Knob} */ knob) {
   };
 
   buildKnobControl(ctl, entry);
+  const link = knob.docHref
+    ? { href: knob.docHref, text: knob.docLinkText || "Learn more" }
+    : null;
 
-  row.appendChild(ctl);
+  row.append(buildRowText(knob.label, knob.doc, link), ctl);
   enableRowClick(row);
   entries.push(entry);
   return row;
@@ -827,17 +819,14 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
   }
 
   if (knob.type === "bool") {
-    const input = document.createElement("input");
-    input.type = "checkbox";
+    const input = inputEl("checkbox");
     row.appendChild(input);
     entry.render = () => {
       input.checked = Boolean(entry.value);
     };
     input.addEventListener("change", () => setKnobValue(entry, input.checked));
   } else if (isSlider) {
-    const slider = document.createElement("input");
-    slider.type = "range";
-    slider.className = "set-slider";
+    const slider = inputEl("range", "set-slider");
     slider.min = String(knob.min ?? 0);
     slider.max = String(knob.max);
     slider.step = String(knob.step ?? (knob.type === "int" ? 1 : 1));
@@ -866,22 +855,14 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
     const select = document.createElement("select");
     select.className = "set-text";
     for (const opt of options) {
-      const o = document.createElement("option");
-      o.value = opt.value;
-      o.textContent = opt.label;
-      select.appendChild(o);
+      select.add(new Option(opt.label, opt.value));
     }
     // A permanent "Custom…" choice that reveals a free-text field for any off-list value
     // (e.g. a voice id pasted from Cartesia's library, or one set over SSH).
-    const customOpt = document.createElement("option");
-    customOpt.value = CUSTOM;
-    customOpt.textContent = "Custom…";
-    select.appendChild(customOpt);
+    select.add(new Option("Custom…", CUSTOM));
     row.appendChild(select);
 
-    const custom = document.createElement("input");
-    custom.type = "text";
-    custom.className = "set-text";
+    const custom = inputEl("text", "set-text");
     custom.placeholder = "Paste a voice ID";
     custom.style.display = "none";
 
@@ -915,9 +896,7 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
     });
     main.append(row, custom);
   } else if (knob.type === "string") {
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "set-text";
+    const input = inputEl("text", "set-text");
     row.appendChild(input);
     entry.render = () => {
       input.value = String(entry.value);
@@ -925,19 +904,16 @@ function buildKnobControl(/** @type {HTMLElement} */ ctl, /** @type {Entry} */ e
     input.addEventListener("input", () => setKnobValue(entry, input.value));
   } else {
     const wrap = textEl("div", "set-num-wrap");
-    const input = document.createElement("input");
+    const input = inputEl("text", "set-num");
     // type=text (not number) so the decimal separator always renders as a dot,
     // regardless of the browser/OS locale; inputmode keeps the mobile numpad.
-    input.type = "text";
     input.inputMode = "decimal";
-    input.className = "set-num";
     if (knob.min !== undefined && knob.max !== undefined) {
       input.title = `Built-in default ${knob.default}` + (knob.unit ? ` ${knob.unit}` : "") + ` · range ${knob.min}–${knob.max}`;
     }
     wrap.appendChild(input);
     if (knob.unit) {
-      const unit = textEl("span", "set-unit", knob.unit);
-      wrap.appendChild(unit);
+      wrap.appendChild(textEl("span", "set-unit", knob.unit));
     }
     row.appendChild(wrap);
     wrap.addEventListener("click", (e) => {

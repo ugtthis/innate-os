@@ -1135,8 +1135,6 @@ select.skill-input {
   left: 50%;
   bottom: 84px;
   transform: translateX(-50%);
-  display: grid;
-  place-items: end center;
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;

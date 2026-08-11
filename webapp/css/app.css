@@ -6577,7 +6577,7 @@ select.skill-input {
   /* Full-size joystick swallows half a phone screen. */
   .overlay-joystick {
     --joystick-hit-size: 150px;
-    --joystick-pad-size: calc(150px * 184 / 264);
+    --joystick-pad-size: 120px;
   }
 
   /* The panel already shows the running state; the chip collides with it. */

@@ -1844,12 +1844,6 @@ select.skill-input {
   );
   border-width:
     calc(1.5px + var(--joystick-throw) * 1.5px + var(--joystick-forward-strength) * 1.25px);
-  box-shadow: 0 0 calc(var(--joystick-forward-strength) * 10px)
-    color-mix(
-      in srgb,
-      var(--accent) calc(var(--joystick-forward-strength) * 45%),
-      transparent
-    );
   transition: transform 130ms cubic-bezier(0.215, 0.61, 0.355, 1);
 }
 

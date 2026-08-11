@@ -1,11 +1,10 @@
 // @ts-check
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Innate Inc
-// DriveController owns the /joystick heartbeat; this module only latches input.
-// CSS feedback is eased; drive input stays linear −1..1.
-// Display sizing is CSS-only.
+// DriveController publishes /joystick and owns its heartbeat; this module reports normalized input.
+// Visual easing does not alter the linear −1..1 drive input.
 
-const PAD_RADIUS = 92; // knob center reaches the rim at full throw
+const PAD_RADIUS = 92; // At full input, the knob center reaches the rim; CSS controls rendered size.
 const PAD_SIZE = PAD_RADIUS * 2;
 const TOGGLE_KEY = "KeyJ";
 

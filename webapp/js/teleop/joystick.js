@@ -121,7 +121,7 @@ export function createJoystick(parent, driveController) {
   hitTarget.addEventListener("pointercancel", release);
   hitTarget.addEventListener("lostpointercapture", release);
 
-  // Hiding must release latched drive input.
+  // Clear latched drive on hide so a hidden joystick can't keep driving.
   let hidden = false;
   function toggleHidden() {
     hidden = !hidden;

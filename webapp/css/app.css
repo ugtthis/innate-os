@@ -1124,7 +1124,6 @@ select.skill-input {
   color: var(--muted);
 }
 
-/* No overlay glass — pad/knob blur the camera. */
 .overlay-joystick {
   --joystick-throw: 0;
   --joystick-strafe: 0;

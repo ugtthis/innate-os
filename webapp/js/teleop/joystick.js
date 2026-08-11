@@ -145,6 +145,8 @@ export function createJoystick(parent, driveController) {
   }
   window.addEventListener("keydown", onKeyDown);
 
+  parent.appendChild(hitTarget);
+
   const unsubActive = driveController.onActiveChange((state) => {
     if (pointerEngaged) return;
     const mirroring = state.source === "keyboard";
@@ -152,8 +154,6 @@ export function createJoystick(parent, driveController) {
     if (mirroring) setKnob(state.x * PAD_RADIUS, -state.y * PAD_RADIUS);
     else if (state.source === null) setKnob(0, 0);
   });
-
-  parent.appendChild(hitTarget);
 
   return {
     destroy() {

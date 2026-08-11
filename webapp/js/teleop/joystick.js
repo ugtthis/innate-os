@@ -137,11 +137,12 @@ export function createJoystick(parent, driveController) {
 
   parent.appendChild(hitTarget);
 
+  // Show keyboard commands on the joystick knob.
   const unsubActive = driveController.onActiveChange((state) => {
     if (pointerEngaged) return;
-    const mirroring = state.source === "keyboard";
-    hitTarget.classList.toggle("mirroring", mirroring);
-    if (mirroring) setKnob(state.x * PAD_RADIUS, -state.y * PAD_RADIUS);
+    const keyboardActive = state.source === "keyboard";
+    hitTarget.classList.toggle("mirroring", keyboardActive);
+    if (keyboardActive) setKnob(state.x * PAD_RADIUS, -state.y * PAD_RADIUS);
     else if (state.source === null) setKnob(0, 0);
   });
 

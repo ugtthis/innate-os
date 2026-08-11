@@ -2,20 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Innate Inc
 // DriveController publishes /joystick and owns its heartbeat; this module reports normalized input.
-// Visual easing does not alter the linear −1..1 drive input.
 
 const PAD_RADIUS = 92; // At full input, the knob center reaches the rim; CSS controls rendered size.
 const PAD_SIZE = PAD_RADIUS * 2;
 const TOGGLE_KEY = "KeyJ";
 
-/** @param {number} t */
-function easeThrow(t) {
-  return t ** 0.65;
-}
-
-/** @param {number} v */
-function easedAxis(v) {
-  return Math.sign(v) * easeThrow(Math.abs(v) / PAD_RADIUS);
+// Helps small movements read clearly via pad glow, direction markers, and knob border/size.
+/** @param {number} value */
+function strengthenVisualFeedback(value) {
+  return Math.sign(value) * Math.abs(value) ** 0.85;
 }
 
 /**
@@ -60,10 +55,10 @@ export function createJoystick(parent, driveController) {
   /** @param {number} dx @param {number} dy screen-frame pad units */
   function setKnob(dx, dy) {
     const p = clampToPad(dx, dy);
-    const throwAmt = easeThrow(p.t);
+    const throwAmt = strengthenVisualFeedback(p.t);
     parent.style.setProperty("--joystick-throw", String(throwAmt));
-    parent.style.setProperty("--joystick-strafe", String(easedAxis(p.dx)));
-    parent.style.setProperty("--joystick-forward", String(easedAxis(-p.dy))); // screen-up → forward
+    parent.style.setProperty("--joystick-strafe", String(strengthenVisualFeedback(p.dx / PAD_RADIUS)));
+    parent.style.setProperty("--joystick-forward", String(strengthenVisualFeedback(-p.dy / PAD_RADIUS))); // screen-up → forward
     // Scale from the visible pad — hit target may be larger and bottom-aligned.
     const toCss = (pad.clientWidth || PAD_SIZE) / PAD_SIZE;
     knob.style.transform =

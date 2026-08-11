@@ -1770,10 +1770,11 @@ select.skill-input {
   background:
     radial-gradient(
       circle at 50% calc(50% - var(--joystick-forward) * 58%),
-      rgb(255 255 255 / calc(var(--joystick-forward-strength) * 0.72)) 0%,
-      rgb(255 255 255 / calc(var(--joystick-forward-strength) * 0.36)) 36%,
-      rgb(255 255 255 / calc(var(--joystick-forward-strength) * 0.12)) 58%,
-      transparent 76%
+      rgb(255 255 255 / calc(var(--joystick-forward-strength) * 0.88)) 0%,
+      rgb(255 255 255 / calc(var(--joystick-forward-strength) * 0.56)) 22%,
+      rgb(255 255 255 / calc(var(--joystick-forward-strength) * 0.3)) 40%,
+      rgb(255 255 255 / calc(var(--joystick-forward-strength) * 0.12)) 55%,
+      rgb(255 255 255 / 0%) 72%
     ),
     rgb(8 8 10 / 38%);
   backdrop-filter: blur(6px);

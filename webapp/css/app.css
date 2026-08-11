@@ -7136,8 +7136,7 @@ select.skill-input {
      order alone keeps the joystick / WASD chips / head tilt painting on top
      (same trick as .cam-map-host.big). An explicit z-index here would let the
      opaque video cover the controls. */
-  /* Grow with the scene, but never reach the joystick: ~264px wide (pad +
-     hit margin) and centred — keep a 12px gap clear of its right edge. */
+  /* Grow to 360px; on narrow scenes, stop at the centred 264px joystick hit target. */
   width: min(360px, calc(50% - 144px));
   aspect-ratio: 4 / 3;
   overflow: hidden;

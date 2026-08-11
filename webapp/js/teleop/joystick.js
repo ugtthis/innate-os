@@ -1,32 +1,28 @@
 // @ts-check
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Innate Inc
-// On-screen joystick. Pointer events with capture give one code path for
-// mouse + touch (touch-action: none in CSS). The math is ported from the
-// mobile stick — knob clamped to outer radius minus knob radius, values
-// normalized to that distance, -y flip into robot frame before setInput —
-// but the rendering is original: a hairline rim with four cardinal ticks,
-// a small dot for the knob, a faint displacement trace while engaged.
+// On-screen joystick. HTML glass pad + knob over a larger pointer surface.
+// Latch only — DriveController owns the /joystick heartbeat.
 //
-// The heartbeat lives in DriveController, NOT here: this module only latches
-// values and reports engage/release.
+// Chrome vars on the overlay (eased −1..1 / 0..1):
+//   --joystick-throw    magnitude
+//   --joystick-strafe   +right / −left
+//   --joystick-forward  +forward / −backward
+// Display size is CSS-only (--joystick-hit-size / --joystick-pad-size).
 
-const SIZE = 180;
-const CENTER = SIZE / 2;
-const OUTER_R = 84;
-const KNOB_R = 13;
-const MAX_DIST = OUTER_R - KNOB_R;
-const SVG_NS = "http://www.w3.org/2000/svg";
-const TOGGLE_KEY = "KeyJ"; // press j to hide/show the on-screen joystick
+// Geometry: pad r=92, knob r=34 (CSS pad*34/92). Hit margin is CSS-only.
+const PAD_RADIUS = 92; // knob center reaches the rim at full throw
+const PAD_SIZE = PAD_RADIUS * 2;
+const TOGGLE_KEY = "KeyJ";
 
-/**
- * @param {string} tag
- * @param {Record<string, string>} attrs
- */
-function svgEl(tag, attrs) {
-  const el = document.createElementNS(SVG_NS, tag);
-  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-  return el;
+/** @param {number} t */
+function easeThrow(t) {
+  return t ** 0.65;
+}
+
+/** @param {number} v */
+function easedAxis(v) {
+  return Math.sign(v) * easeThrow(Math.abs(v) / PAD_RADIUS);
 }
 
 /**
@@ -35,89 +31,68 @@ function svgEl(tag, attrs) {
  * @returns {{ destroy: () => void }}
  */
 export function createJoystick(parent, driveController) {
-  const svg = /** @type {SVGSVGElement} */ (
-    svgEl("svg", {
-      class: "joystick",
-      viewBox: `0 0 ${SIZE} ${SIZE}`,
-      width: String(SIZE),
-      height: String(SIZE),
-      role: "application",
-      "aria-label": "Drive joystick",
-    })
-  );
-
-  // SVG tooltips come from a <title> child, not the title attribute.
-  const tooltip = svgEl("title", {});
-  tooltip.textContent = "drag to drive — /joystick · press j to hide";
-  svg.appendChild(tooltip);
-  svg.appendChild(svgEl("circle", { class: "joy-rim", cx: String(CENTER), cy: String(CENTER), r: String(OUTER_R) }));
-
-  // Four faint cardinal ticks just inside the rim.
-  const tickIn = OUTER_R - 7;
-  const tickOut = OUTER_R - 1;
-  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
-    svg.appendChild(
-      svgEl("line", {
-        class: "joy-tick",
-        x1: String(CENTER + dx * tickIn),
-        y1: String(CENTER + dy * tickIn),
-        x2: String(CENTER + dx * tickOut),
-        y2: String(CENTER + dy * tickOut),
-      }),
-    );
+  const pad = document.createElement("div");
+  pad.className = "joystick-pad";
+  for (const direction of ["forward", "backward", "right", "left"]) {
+    const marker = document.createElement("span");
+    marker.className = `joystick-direction joystick-direction-${direction}`;
+    pad.appendChild(marker);
   }
 
-  const trace = svgEl("line", {
-    class: "joy-trace",
-    x1: String(CENTER),
-    y1: String(CENTER),
-    x2: String(CENTER),
-    y2: String(CENTER),
-  });
-  svg.appendChild(trace);
+  const knob = document.createElement("div");
+  knob.className = "joystick-knob";
 
-  // Knob in a translated group so CSS can transition the release snap-back.
-  const knobGroup = /** @type {SVGGElement} */ (svgEl("g", { class: "joy-knob-group" }));
-  knobGroup.appendChild(svgEl("circle", { class: "joy-knob", cx: String(CENTER), cy: String(CENTER), r: String(KNOB_R) }));
-  svg.appendChild(knobGroup);
+  const hitTarget = document.createElement("div");
+  hitTarget.className = "joystick-hit-target";
+  hitTarget.setAttribute("role", "application");
+  hitTarget.setAttribute("aria-label", "Drive joystick");
+  hitTarget.title = "drag to drive — /joystick · press j to hide";
+  // Siblings so each backdrop-filter samples the camera, not the other glass.
+  hitTarget.append(pad, knob);
 
   let pointerEngaged = false;
 
-  /**
-   * Place the knob at a screen-frame displacement from center (clamped).
-   * @param {number} dx
-   * @param {number} dy
-   */
-  function setKnob(dx, dy) {
-    knobGroup.style.transform = `translate(${dx}px, ${dy}px)`;
-    trace.setAttribute("x2", String(CENTER + dx));
-    trace.setAttribute("y2", String(CENTER + dy));
-    svg.classList.toggle("at-edge", Math.hypot(dx, dy) >= MAX_DIST - 0.5);
+  /** @param {number} dx @param {number} dy */
+  function clampToPad(dx, dy) {
+    const dist = Math.hypot(dx, dy);
+    const t = Math.min(1, dist / PAD_RADIUS);
+    if (dist > PAD_RADIUS) {
+      const s = PAD_RADIUS / dist;
+      dx *= s;
+      dy *= s;
+    }
+    return { dx, dy, t };
   }
 
-  /**
-   * @param {PointerEvent} e
-   * @returns {{ dx: number, dy: number }} clamped screen-frame displacement
-   */
-  function displacementFrom(e) {
-    const rect = svg.getBoundingClientRect();
-    const scale = SIZE / rect.width;
-    let dx = (e.clientX - rect.left - rect.width / 2) * scale;
-    let dy = (e.clientY - rect.top - rect.height / 2) * scale;
-    const dist = Math.hypot(dx, dy);
-    if (dist > MAX_DIST && dist > 0) {
-      dx *= MAX_DIST / dist;
-      dy *= MAX_DIST / dist;
-    }
-    return { dx, dy };
+  /** @param {number} dx @param {number} dy screen-frame pad units */
+  function setKnob(dx, dy) {
+    const p = clampToPad(dx, dy);
+    const throwAmt = easeThrow(p.t);
+    parent.style.setProperty("--joystick-throw", String(throwAmt));
+    parent.style.setProperty("--joystick-strafe", String(easedAxis(p.dx)));
+    parent.style.setProperty("--joystick-forward", String(easedAxis(-p.dy))); // screen-up → forward
+    // Scale from the visible pad — hit target may be larger and bottom-aligned.
+    const toCss = (pad.clientWidth || PAD_SIZE) / PAD_SIZE;
+    knob.style.transform =
+      `translate(${p.dx * toCss}px, ${p.dy * toCss}px) scale(${1 + throwAmt * 0.05})`;
+    return p;
+  }
+
+  /** @param {PointerEvent} e */
+  function pointerOffset(e) {
+    const rect = pad.getBoundingClientRect();
+    const toPad = PAD_SIZE / rect.width;
+    return {
+      dx: (e.clientX - rect.left - rect.width / 2) * toPad,
+      dy: (e.clientY - rect.top - rect.height / 2) * toPad,
+    };
   }
 
   /** @param {PointerEvent} e */
   function update(e) {
-    const { dx, dy } = displacementFrom(e);
-    setKnob(dx, dy);
-    // Normalize and flip into robot frame (screen y grows downward).
-    driveController.setInput("joystick", dx / MAX_DIST, -dy / MAX_DIST, true);
+    const { dx, dy } = pointerOffset(e);
+    const p = setKnob(dx, dy);
+    driveController.setInput("joystick", p.dx / PAD_RADIUS, -p.dy / PAD_RADIUS, true);
   }
 
   /** @param {PointerEvent} e */
@@ -125,11 +100,11 @@ export function createJoystick(parent, driveController) {
     if (pointerEngaged) return;
     pointerEngaged = true;
     try {
-      svg.setPointerCapture(e.pointerId);
+      hitTarget.setPointerCapture(e.pointerId);
     } catch {
-      // Capture can fail for synthetic/stale pointers; degrade gracefully.
+      // synthetic/stale pointers
     }
-    svg.classList.add("engaged");
+    hitTarget.classList.add("engaged");
     update(e);
   }
 
@@ -141,24 +116,22 @@ export function createJoystick(parent, driveController) {
   function release() {
     if (!pointerEngaged) return;
     pointerEngaged = false;
-    svg.classList.remove("engaged");
+    hitTarget.classList.remove("engaged");
     setKnob(0, 0);
     driveController.setInput("joystick", 0, 0, false);
   }
 
-  svg.addEventListener("pointerdown", onPointerDown);
-  svg.addEventListener("pointermove", onPointerMove);
-  svg.addEventListener("pointerup", release);
-  svg.addEventListener("pointercancel", release);
-  svg.addEventListener("lostpointercapture", release);
+  hitTarget.addEventListener("pointerdown", onPointerDown);
+  hitTarget.addEventListener("pointermove", onPointerMove);
+  hitTarget.addEventListener("pointerup", release);
+  hitTarget.addEventListener("pointercancel", release);
+  hitTarget.addEventListener("lostpointercapture", release);
 
-  // Hide/show with the j key. Releasing on hide clears any latched command so
-  // the robot never keeps driving from a joystick the operator can't see.
   let hidden = false;
   function toggleHidden() {
     hidden = !hidden;
     if (hidden) release();
-    svg.style.display = hidden ? "none" : "";
+    hitTarget.hidden = hidden;
   }
 
   /** @param {KeyboardEvent} e */
@@ -172,25 +145,25 @@ export function createJoystick(parent, driveController) {
   }
   window.addEventListener("keydown", onKeyDown);
 
-  // Mirror keyboard drive so the knob always shows what the robot was told.
   const unsubActive = driveController.onActiveChange((state) => {
     if (pointerEngaged) return;
-    svg.classList.toggle("mirroring", state.source === "keyboard");
-    if (state.source === "keyboard") {
-      setKnob(state.x * MAX_DIST, -state.y * MAX_DIST);
-    } else if (state.source === null) {
-      setKnob(0, 0);
-    }
+    const mirroring = state.source === "keyboard";
+    hitTarget.classList.toggle("mirroring", mirroring);
+    if (mirroring) setKnob(state.x * PAD_RADIUS, -state.y * PAD_RADIUS);
+    else if (state.source === null) setKnob(0, 0);
   });
 
-  parent.appendChild(svg);
+  parent.appendChild(hitTarget);
 
   return {
     destroy() {
       release();
       window.removeEventListener("keydown", onKeyDown);
       unsubActive();
-      svg.remove();
+      hitTarget.remove();
+      parent.style.removeProperty("--joystick-throw");
+      parent.style.removeProperty("--joystick-strafe");
+      parent.style.removeProperty("--joystick-forward");
     },
   };
 }

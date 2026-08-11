@@ -1,16 +1,10 @@
 // @ts-check
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Innate Inc
-// On-screen joystick. HTML glass pad + knob over a larger pointer surface.
-// Latch only — DriveController owns the /joystick heartbeat.
-//
-// Chrome vars on the overlay (eased −1..1 / 0..1):
-//   --joystick-throw    magnitude
-//   --joystick-strafe   +right / −left
-//   --joystick-forward  +forward / −backward
-// Display size is CSS-only (--joystick-hit-size / --joystick-pad-size).
+// DriveController owns the /joystick heartbeat; this module only latches input.
+// CSS feedback is eased; drive input stays linear −1..1.
+// Display sizing is CSS-only.
 
-// Geometry: pad r=92, knob r=34 (CSS pad*34/92). Hit margin is CSS-only.
 const PAD_RADIUS = 92; // knob center reaches the rim at full throw
 const PAD_SIZE = PAD_RADIUS * 2;
 const TOGGLE_KEY = "KeyJ";
@@ -102,7 +96,7 @@ export function createJoystick(parent, driveController) {
     try {
       hitTarget.setPointerCapture(e.pointerId);
     } catch {
-      // synthetic/stale pointers
+      // Synthetic/stale pointers may not be capturable.
     }
     hitTarget.classList.add("engaged");
     update(e);
@@ -127,6 +121,7 @@ export function createJoystick(parent, driveController) {
   hitTarget.addEventListener("pointercancel", release);
   hitTarget.addEventListener("lostpointercapture", release);
 
+  // Hiding must release latched drive input.
   let hidden = false;
   function toggleHidden() {
     hidden = !hidden;

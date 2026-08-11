@@ -1124,7 +1124,7 @@ select.skill-input {
   color: var(--muted);
 }
 
-/* Stick overlay. Chrome vars from joystick.js; forward-strength ignores sign. */
+/* No overlay glass — pad/knob blur the camera. */
 .overlay-joystick {
   --joystick-throw: 0;
   --joystick-strafe: 0;
@@ -1742,8 +1742,6 @@ select.skill-input {
 }
 
 /* ---- joystick ------------------------------------------------------------ */
-/* Geometry (joystick.js): pad r=92, knob r=34; hit size = pad + margin.
-   Hit target is the root; pad + knob are siblings (nested glass kills blur). */
 
 .joystick-hit-target {
   display: grid;
@@ -1770,7 +1768,6 @@ select.skill-input {
   height: var(--joystick-pad-size);
   border-radius: 50%;
   pointer-events: none;
-  /* White pool shifts with direction: top = forward, bottom = backward. */
   background:
     radial-gradient(
       circle at 50% calc(50% - var(--joystick-forward) * 58%),

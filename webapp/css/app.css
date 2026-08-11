@@ -1841,7 +1841,7 @@ select.skill-input {
   border-color: color-mix(
     in srgb,
     rgb(255 255 255 / 48%) calc((1 - var(--joystick-forward-strength)) * 100%),
-    var(--accent) calc(var(--joystick-forward-strength) * 100%)
+    #eead55 calc(var(--joystick-forward-strength) * 100%)
   );
   border-width:
     calc(1.5px + var(--joystick-throw) * 3.5px + var(--joystick-forward-strength) * 1.25px);

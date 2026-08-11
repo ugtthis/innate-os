@@ -1843,7 +1843,7 @@ select.skill-input {
     var(--accent) calc(var(--joystick-forward-strength) * 100%)
   );
   border-width:
-    calc(1.5px + var(--joystick-throw) * 1.5px + var(--joystick-forward-strength) * 1.25px);
+    calc(1.5px + var(--joystick-throw) * 3.5px + var(--joystick-forward-strength) * 1.25px);
   transition: transform 130ms cubic-bezier(0.215, 0.61, 0.355, 1);
 }
 

@@ -58,7 +58,7 @@ export function createJoystick(parent, driveController) {
     const throwAmt = strengthenVisualFeedback(p.t);
     parent.style.setProperty("--joystick-throw", String(throwAmt));
     parent.style.setProperty("--joystick-strafe", String(strengthenVisualFeedback(p.dx / PAD_RADIUS)));
-    parent.style.setProperty("--joystick-forward", String(strengthenVisualFeedback(-p.dy / PAD_RADIUS))); // screen-up → forward
+    parent.style.setProperty("--joystick-forward", String(strengthenVisualFeedback(-p.dy / PAD_RADIUS)));
     // Scale from the visible pad — hit target may be larger and bottom-aligned.
     const toCss = (pad.clientWidth || PAD_SIZE) / PAD_SIZE;
     knob.style.transform =
@@ -80,6 +80,7 @@ export function createJoystick(parent, driveController) {
   function update(e) {
     const { dx, dy } = pointerOffset(e);
     const p = setKnob(dx, dy);
+    // Screen Y grows downward; negate it so dragging up maps to forward motion.
     driveController.setInput("joystick", p.dx / PAD_RADIUS, -p.dy / PAD_RADIUS, true);
   }
 

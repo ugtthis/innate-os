@@ -87,6 +87,8 @@ export function createJoystick(parent, driveController) {
   /** @param {PointerEvent} e */
   function onPointerDown(e) {
     if (pointerEngaged) return;
+    const { dx, dy } = pointerOffset(e);
+    if (Math.hypot(dx, dy) > PAD_RADIUS) return;
     pointerEngaged = true;
     try {
       hitTarget.setPointerCapture(e.pointerId);

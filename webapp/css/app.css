@@ -1749,10 +1749,11 @@ select.skill-input {
   width: var(--joystick-hit-size);
   height: var(--joystick-hit-size);
   touch-action: none;
-  cursor: grab;
+  cursor: default;
 }
 
-.joystick-hit-target.engaged {
+.joystick-hit-target.engaged,
+.joystick-hit-target.engaged .joystick-pad {
   cursor: grabbing;
 }
 
@@ -1766,7 +1767,7 @@ select.skill-input {
   width: var(--joystick-pad-size);
   height: var(--joystick-pad-size);
   border-radius: 50%;
-  pointer-events: none;
+  cursor: grab;
   background:
     radial-gradient(
       circle at 50% calc(50% - var(--joystick-forward) * 58%),

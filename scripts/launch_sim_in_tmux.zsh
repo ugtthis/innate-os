@@ -83,6 +83,9 @@ tmux new-window -t "$SESSION_NAME" -n sim-driver
 tmux send-keys -t "${TMUX_TARGET_PREFIX}:sim-driver" "ros2 launch mars_sim_driver sim_driver.launch.py" C-m
 echo "Started virtual MARS driver (MuJoCo)..."
 settle_after_launch
+tmux split-window -t "${TMUX_TARGET_PREFIX}:sim-driver" -h
+tmux send-keys -t "${TMUX_TARGET_PREFIX}:sim-driver.1" "ros2 launch mars_control udp_leader_receiver.launch.py" C-m
+echo "Started UDP leader receiver (:9999/udp)..."
 
 # === Window 3: Nav + Brain ===
 # The REAL navigation stack (mode manager, router, namespaced planners, AMCL,

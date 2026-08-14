@@ -15,6 +15,8 @@
 # Every statement lives in a function called from main() on the last line: a
 # truncated download must not half-execute.
 
+# step() runs the install_* helpers through "$@", which shellcheck cannot trace
+# shellcheck disable=SC2329
 set -eu
 
 REPO_URL="${INNATE_REPO_URL:-https://github.com/innate-inc/innate-os.git}"
@@ -27,12 +29,20 @@ DOCKER_INSTALL_URL="https://get.docker.com"
 GL_PACKAGES="libegl1 libgl1 libopengl0 libosmesa6"
 MIN_FREE_GB=20
 DOCKER_WAIT_S=180
+LOG_FILE="${INNATE_INSTALL_LOG:-$HOME/.innate-install.log}"
+VERBOSE="${INNATE_VERBOSE:-0}"
 
 PLATFORM=""
 TMPDIR_INSTALL=""
 NEED_RELOGIN=0
 INTERACTIVE=0
 PLAN=""
+SUDO_PRIMED=0
+
+# Package managers ask questions no unattended install can answer, and
+# needrestart prints a service-restart audit nobody asked for.
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
 
 if [ -t 1 ]; then
     BOLD=$(printf '\033[1m')
@@ -51,12 +61,63 @@ case "${COLORTERM:-}" in
     *) TRUECOLOR=0 ;;
 esac
 
-log() { printf '%s==>%s %s\n' "$CYAN" "$NC" "$*"; }
-ok() { printf '%s  ok%s %s\n' "$GREEN" "$NC" "$*"; }
-warn() { printf '%s  !!%s %s\n' "$YELLOW" "$NC" "$*" >&2; }
+# One line per step, in a right-aligned label column: what happened, never how.
+# The how goes to LOG_FILE, which every failure points at.
+say() { printf '  %s%8s%s  %s\n' "$CYAN" "$1" "$NC" "$2"; }
+note() { printf '  %s%8s  %s%s\n' "$DIM" "" "$1" "$NC"; }
+warn() { printf '  %s%8s%s  %s\n' "$YELLOW" "warning" "$NC" "$*" >&2; }
 die() {
-    printf '%s  xx%s %s\n' "$RED" "$NC" "$*" >&2
+    printf '\r\033[K  %s%8s%s  %s\n' "$RED" "failed" "$NC" "$*" >&2
+    if [ -s "$LOG_FILE" ]; then
+        printf '  %s%8s  full log: %s%s\n' "$DIM" "" "$LOG_FILE" "$NC" >&2
+    fi
     exit 1
+}
+
+spinner_frame() {
+    n=$1
+    set -- '⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏'
+    shift "$((n % 10))"
+    printf '%s' "$1"
+}
+
+# step <label> <message> <command...>: run it with its output in the log,
+# showing one live line that settles into a check mark.
+step() {
+    step_label=$1
+    step_msg=$2
+    shift 2
+    if [ -z "$NC" ] || [ "$VERBOSE" != "0" ]; then
+        say "$step_label" "$step_msg"
+        "$@" >>"$LOG_FILE" 2>&1 || return 1
+        return 0
+    fi
+
+    "$@" >>"$LOG_FILE" 2>&1 &
+    step_pid=$!
+    step_n=0
+    while kill -0 "$step_pid" 2>/dev/null; do
+        printf '\r\033[K  %s%8s%s  %s %s' "$CYAN" "$step_label" "$NC" "$(spinner_frame "$step_n")" "$step_msg"
+        step_n=$((step_n + 1))
+        sleep 0.1
+    done
+    if ! wait "$step_pid"; then
+        printf '\r\033[K'
+        return 1
+    fi
+    printf '\r\033[K  %s%8s%s  %s✔%s %s\n' "$CYAN" "$step_label" "$NC" "$GREEN" "$NC" "$step_msg"
+}
+
+# Privileged steps run in the background, where a password prompt would hang
+# invisibly. Ask for it here, in the foreground, once.
+prime_sudo() {
+    [ "$SUDO_PRIMED" -eq 1 ] && return 0
+    SUDO_PRIMED=1
+    [ "$(id -u)" -eq 0 ] && return 0
+    have sudo || die "This install needs root and sudo is not installed. Run it as root, or install sudo."
+    sudo -n true 2>/dev/null && return 0
+    note "administrator password needed to install system packages"
+    with_tty sudo -v || die "Could not authenticate with sudo."
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -183,32 +244,38 @@ build_plan() {
 }
 
 review_plan() {
-    printf '\n%sThis will:%s\n%s\n' "$BOLD" "$NC" "$PLAN"
-    confirm "Continue?" || die "Aborted. Nothing was installed."
+    printf '\n'
+    say "install" "$(printf '%s' "$PLAN" | sed 's/^  - //' | head -1)"
+    printf '%s' "$PLAN" | sed '1d;s/^  - /                    /'
+    printf '\n'
+    confirm "  Continue?" || die "Aborted. Nothing was installed."
+    printf '\n'
+}
+
+install_git() {
+    if have apt-get; then
+        as_root apt-get update -qq && as_root apt-get install -y git
+    elif have dnf; then
+        as_root dnf install -y git
+    else
+        return 1
+    fi
 }
 
 ensure_git() {
     have git && return 0
-    log "Installing git..."
-    if have apt-get; then
-        as_root apt-get update -qq
-        as_root apt-get install -y git
-    elif have dnf; then
-        as_root dnf install -y git
-    elif [ "$PLATFORM" = "macos" ]; then
+    if [ "$PLATFORM" = "macos" ]; then
         # Triggers the Command Line Tools GUI installer, which this script
         # cannot wait on -- so send the user back rather than racing it.
         xcode-select --install >/dev/null 2>&1 || true
         die "git is missing. Finish the Command Line Tools install macOS just offered, then rerun this command."
-    else
-        die "git is required and no supported package manager was found. Install git and rerun."
     fi
-    ok "git installed."
+    prime_sudo
+    step "git" "git" install_git || die "Could not install git."
 }
 
 start_docker_daemon() {
     docker info >/dev/null 2>&1 && return 0
-    log "Starting the Docker daemon..."
     if [ "$PLATFORM" = "macos" ]; then
         open --background -a Docker >/dev/null 2>&1 || true
     elif have systemctl; then
@@ -229,14 +296,12 @@ start_docker_daemon() {
 
 install_docker_macos() {
     have brew || die "Docker Desktop is not installed, and Homebrew is not available to install it. Download it from https://docs.docker.com/desktop/install/mac-install/, open it once, then rerun this command."
-    log "Installing Docker Desktop..."
     # The cask was renamed docker -> docker-desktop; accept either, so this
     # works on both old and new Homebrew.
     brew install --cask docker-desktop || brew install --cask docker
 }
 
 install_docker_linux() {
-    log "Installing Docker..."
     curl -fsSL "$DOCKER_INSTALL_URL" -o "$TMPDIR_INSTALL/get-docker.sh"
     as_root sh "$TMPDIR_INSTALL/get-docker.sh"
     if [ "$(id -u)" -ne 0 ]; then
@@ -251,38 +316,40 @@ install_docker_linux() {
 ensure_docker() {
     if ! have docker; then
         if [ "$PLATFORM" = "macos" ]; then
-            install_docker_macos
+            step "docker" "Docker Desktop" install_docker_macos || die "Could not install Docker Desktop."
         else
-            install_docker_linux
+            prime_sudo
+            step "docker" "Docker Engine + Compose" install_docker_linux || die "Could not install Docker."
         fi
     fi
 
-    if [ "$NEED_RELOGIN" -eq 1 ]; then
-        ok "Docker installed."
-        return 0
-    fi
-    if start_docker_daemon; then
-        ok "Docker is running."
-    elif [ "$PLATFORM" = "macos" ]; then
-        die "Docker Desktop did not finish starting within ${DOCKER_WAIT_S}s. Open it, wait for it to settle, then rerun this command."
-    else
+    [ "$NEED_RELOGIN" -eq 1 ] && return 0
+    if ! step "docker" "daemon running" start_docker_daemon; then
+        if [ "$PLATFORM" = "macos" ]; then
+            die "Docker Desktop did not finish starting within ${DOCKER_WAIT_S}s. Open it, wait for it to settle, then rerun this command."
+        fi
         die "The Docker daemon is installed but did not start. Start it (sudo systemctl start docker) and rerun this command."
     fi
 }
 
+install_uv() {
+    curl -LsSf "$UV_INSTALL_URL" -o "$TMPDIR_INSTALL/uv-install.sh"
+    sh "$TMPDIR_INSTALL/uv-install.sh"
+}
+
 ensure_uv() {
-    if uv_installed; then
-        ok "uv is installed."
-    else
-        log "Installing uv..."
-        curl -LsSf "$UV_INSTALL_URL" -o "$TMPDIR_INSTALL/uv-install.sh"
-        sh "$TMPDIR_INSTALL/uv-install.sh" >/dev/null
-        ok "uv installed."
-    fi
+    uv_installed || step "uv" "uv" install_uv || die "Could not install uv."
     # The installer's default location, which the current shell does not have
     # on PATH yet. Same paths the launcher looks in (runtime.find_uv).
     PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
     export PATH
+}
+
+install_render_libs() {
+    as_root apt-get update -qq
+    # GL_PACKAGES is a package list, so it has to word-split
+    # shellcheck disable=SC2086
+    as_root apt-get install -y $GL_PACKAGES
 }
 
 ensure_render_libs() {
@@ -291,38 +358,41 @@ ensure_render_libs() {
         warn "Install your distro's OpenGL/OSMesa runtime if the 3D view fails to start (Fedora: mesa-libEGL mesa-libGL mesa-libOSMesa)."
         return 0
     fi
-    log "Installing rendering libraries..."
-    as_root apt-get update -qq
-    # GL_PACKAGES is a package list, so it has to word-split
-    # shellcheck disable=SC2086
-    as_root apt-get install -y $GL_PACKAGES
-    ok "Rendering libraries installed."
+    prime_sudo
+    step "render" "OpenGL libraries" install_render_libs || die "Could not install the rendering libraries."
+}
+
+update_checkout() {
+    git -C "$INNATE_DIR" fetch --quiet origin "$REF" || return 1
+    if [ -n "$(git -C "$INNATE_DIR" status --porcelain)" ]; then
+        return 0 # local changes are the user's; never touch them
+    fi
+    git -C "$INNATE_DIR" merge --ff-only FETCH_HEAD >/dev/null 2>&1 || return 0
+}
+
+clone_checkout() {
+    # Blobless rather than shallow: full history for log/bisect at a fraction
+    # of the size, and `git pull` keeps working afterwards.
+    git clone --quiet --filter=blob:none --branch "$REF" "$REPO_URL" "$INNATE_DIR"
 }
 
 clone_repo() {
     if [ -d "$INNATE_DIR/.git" ]; then
-        log "Updating $INNATE_DIR..."
-        git -C "$INNATE_DIR" fetch --quiet origin "$REF"
-        if [ -n "$(git -C "$INNATE_DIR" status --porcelain)" ]; then
-            warn "$INNATE_DIR has local changes; leaving the checkout as it is."
-        elif ! git -C "$INNATE_DIR" merge --ff-only FETCH_HEAD >/dev/null 2>&1; then
-            warn "$INNATE_DIR could not fast-forward to $REF; leaving the checkout as it is."
-        fi
+        step "repo" "updated $INNATE_DIR" update_checkout || die "Could not update $INNATE_DIR."
     else
         git ls-remote --exit-code --heads "$REPO_URL" "$REF" >/dev/null 2>&1 ||
             die "$REPO_URL has no branch named $REF. Set INNATE_SIM_REF to one that exists (main, for the development tip), or report this at https://discord.gg/innate."
-        log "Cloning innate-os into $INNATE_DIR..."
+        step "repo" "cloned into $INNATE_DIR" clone_checkout || die "Could not clone $REPO_URL."
         # Blobless rather than shallow: full history for log/bisect at a
-        # fraction of the size, and `git pull` keeps working afterwards.
-        git clone --quiet --filter=blob:none --branch "$REF" "$REPO_URL" "$INNATE_DIR"
     fi
-    ok "innate-os at $(git -C "$INNATE_DIR" rev-parse --short HEAD) ($REF)"
+    note "$REF at $(git -C "$INNATE_DIR" rev-parse --short HEAD)"
 }
 
 run_setup() {
     # setup owns the rest: prerequisite versions, the agent key, and the
     # runtime download that makes the first `up` a start rather than a wait.
     setup_failed="Setup did not finish (see above). Fix the problem, then rerun: cd $INNATE_DIR && ./innate-sim setup"
+    printf '\n'
 
     if [ "$NEED_RELOGIN" -eq 0 ]; then
         with_tty sh -c "cd '$INNATE_DIR' && ./innate-sim setup" || die "$setup_failed"
@@ -346,8 +416,6 @@ report_relogin() {
     printf 'Then finish the install:\n\n'
     printf '  cd %s && ./innate-sim setup\n\n' "$INNATE_DIR"
 }
-
-divider() { printf '%s%s%s\n' "$DIM" "────────────────────────────────────────────────────────" "$NC"; }
 
 # The launcher's wordmark (dashboard.ASCII_BANNER) and its green-to-gold
 # gradient, so the install ends in the same skin the dashboard opens in.
@@ -380,28 +448,34 @@ print_logo() {
 EOF
 }
 
+print_intro() {
+    printf '\n'
+    print_logo
+    printf '  %ssimulator installer%s\n\n' "$DIM" "$NC"
+}
+
 report_next_steps() {
     printf '\n'
-    divider
-    print_logo
-    printf '%ssimulator ready // %s%s\n' "$DIM" "$INNATE_DIR" "$NC"
-    divider
-    printf '\n  %sStart it%s    cd %s && ./innate-sim up\n' "$BOLD" "$NC" "$(basename "$INNATE_DIR")"
-    printf '  %sThen open%s   https://localhost %s(accept the self-signed certificate)%s\n' "$BOLD" "$NC" "$DIM" "$NC"
-    printf '  %sStuck?%s      https://discord.gg/innate\n\n' "$BOLD" "$NC"
+    say "ready" "the simulator is installed"
+    printf '\n'
+    printf '  %s%8s%s  cd %s && ./innate-sim up\n' "$BOLD" "start" "$NC" "$(basename "$INNATE_DIR")"
+    printf '  %s%8s%s  https://localhost %s(accept the self-signed certificate)%s\n' "$BOLD" "open" "$NC" "$DIM" "$NC"
+    printf '  %s%8s%s  https://discord.gg/innate\n' "$BOLD" "help" "$NC"
+    printf '\n'
     if [ "$NEED_RELOGIN" -eq 1 ]; then
-        printf '%sDocker was installed just now, so this shell is not in the docker group\n' "$DIM"
-        printf 'yet -- innate-sim reruns itself under sg to cover it. Your next login\n'
-        printf 'session gets the group properly and needs nothing.%s\n\n' "$NC"
+        note "docker was installed just now, so this shell is not in its group yet;"
+        note "innate-sim reruns itself under sg until your next login session."
+        printf '\n'
     fi
 }
 
 main() {
-    printf '\n%sInnate simulator installer%s\n' "$BOLD" "$NC"
     TMPDIR_INSTALL=$(mktemp -d)
     trap cleanup EXIT INT TERM
 
+    : >"$LOG_FILE" 2>/dev/null || LOG_FILE="$TMPDIR_INSTALL/install.log"
     attach_terminal
+    print_intro
     detect_platform
     check_install_dir
     build_plan

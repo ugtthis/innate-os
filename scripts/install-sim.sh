@@ -28,6 +28,12 @@ REF="${INNATE_SIM_REF:-sim-stable}"
 # Where `git clone` would put it: in the directory you ran this from.
 INNATE_DIR_EXPLICIT=$([ -n "${INNATE_DIR:-}" ] && echo 1 || echo 0)
 INNATE_DIR="${INNATE_DIR:-$(pwd)/innate-os}"
+case "$INNATE_DIR" in
+    # Relative paths become absolute here rather than at a dozen call sites:
+    # `-weird` reads as an option to git, cd and ls; `/home/you/-weird` cannot.
+    /*) ;;
+    *) INNATE_DIR="$(pwd)/$INNATE_DIR" ;;
+esac
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 DOCKER_INSTALL_URL="https://get.docker.com"
 GL_PACKAGES="libegl1 libgl1 libopengl0 libosmesa6"
@@ -814,7 +820,7 @@ update_checkout() {
 clone_checkout() {
     # Blobless rather than shallow: full history for log/bisect at a fraction
     # of the size, and `git pull` keeps working afterwards.
-    git clone --quiet --filter=blob:none --branch "$REF" "$REPO_URL" "$INNATE_DIR"
+    git clone --quiet --filter=blob:none --branch "$REF" -- "$REPO_URL" "$INNATE_DIR"
 }
 
 clone_repo() {
@@ -971,25 +977,25 @@ ask_setup_questions() {
         # Already answered, before anything was installed. The launcher writes
         # .env; the key travels down a pipe between our two processes.
         if printf '%s' "$LLM_KEY" |
-            sh -c "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup --no-prefetch --backend $LLM_BACKEND"; then
+            sh -c "cd -- $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup --no-prefetch --backend $LLM_BACKEND"; then
             LLM_KEY=""
             return 0
         fi
-    elif with_docker_group_or_plain "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup --no-prefetch"; then
+    elif with_docker_group_or_plain "cd -- $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup --no-prefetch"; then
         return 0
     fi
     die "Could not save your key (see above). Fix the problem, then rerun:
-  cd $(display_path "$INNATE_DIR") && ./innate-sim setup"
+  cd -- $(display_path "$INNATE_DIR") && ./innate-sim setup"
 }
 
 # The long half: images, geometry, the world's Python environment. No prompts.
 run_prefetch() {
     printf '\n'
-    if with_docker_group_or_plain "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup --prefetch-only"; then
+    if with_docker_group_or_plain "cd -- $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup --prefetch-only"; then
         return 0
     fi
     die "The download did not finish (see above). Fix the problem, then rerun:
-  cd $(display_path "$INNATE_DIR") && ./innate-sim setup"
+  cd -- $(display_path "$INNATE_DIR") && ./innate-sim setup"
 }
 
 # Under the docker group when this shell predates it, plainly when it does not.

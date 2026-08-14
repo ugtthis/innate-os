@@ -208,10 +208,17 @@ step_streamed() {
     step_done=$3
     shift 3
     say "$step_label" "$step_msg"
-    { "$@" 2>&1; printf '%s' "$?" >"$TMPDIR_INSTALL/step-status"; } | sed 's/^/            /' | tee -a "$LOG_FILE"
-    step_status=$(cat "$TMPDIR_INSTALL/step-status")
-    [ "$step_status" -eq 0 ] || return "$step_status"
-    printf '  %s%8s%s  %s✔%s %s\n' "$CYAN" "$step_label" "$NC" "$GREEN" "$NC" "$step_done"
+    # The terminal itself, not a pipe: a pipe would make this command's stdout
+    # a block-buffered file, so a ten-minute install would show nothing for
+    # minutes and then a wall of it -- which is exactly what a live view is
+    # for. The cost is that its output goes to the screen only; a failure here
+    # has already printed its reason there.
+    step_started=$(date +%s 2>/dev/null || echo 0)
+    "$@" || return 1
+    step_elapsed=$(($(date +%s 2>/dev/null || echo 0) - step_started))
+    printf '  %s%8s%s  %s✔%s %s %s(%sm%02ds)%s\n' \
+        "$CYAN" "$step_label" "$NC" "$GREEN" "$NC" "$step_done" \
+        "$DIM" "$((step_elapsed / 60))" "$((step_elapsed % 60))" "$NC"
 }
 
 # The status line plus the tail of the log, so a long step shows its work
@@ -717,7 +724,7 @@ $macos_manual"
     # Before the step, never inside it: brew needs sudo for the /usr/local
     # links, and a password prompt under a spinner is a hang with no message.
     prime_sudo
-    note "Homebrew's output follows; this takes a few minutes."
+    note "Homebrew's output follows -- it takes a few minutes, and it is not stuck"
     step_streamed "docker" "Installing Docker Desktop" "Docker Desktop installed" install_docker_macos ||
         die "Could not install Docker Desktop. Details: $LOG_FILE"
 }

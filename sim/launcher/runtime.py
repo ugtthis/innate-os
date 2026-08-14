@@ -786,16 +786,6 @@ def ensure_os_container(config: dict[str, object], os_env_file: Path, *, offline
                     f"{shorten_docker_image_ref(local_image)} nor a pinned prebuilt).\n"
                     f"Run `{CLI_SIM} up` online once first."
                 )
-            # The viewer mount is an IMAGE, not a bind: compose resolves it
-            # even with --pull never, so offline needs it in the local store.
-            assets_image = assets_image_ref(config)
-            if not docker_image_present(assets_image, cwd=os_repo, env=probe_env):
-                raise StackError(
-                    "Offline, but the sim asset image is not in the local Docker store:\n"
-                    f"  {shorten_docker_image_ref(assets_image)}\n"
-                    "The webapp's 3D view mounts the viewer straight from it, so compose cannot "
-                    f"start without it.\nRun `{CLI_SIM} up` online once first."
-                )
             up_cmd.append("--no-build")
         elif os_image:
             compose_probe_env = os_compose_env(env_file=os_env_file)

@@ -68,6 +68,9 @@ DISK_FREE_GB=""
 DISK_TARGET=""
 SUDO_PRIMED=0
 STEP_ACTIVE=0
+# Timed from the moment the last question is answered: what the reader cares
+# about is how long they were not needed for, not how long they spent reading.
+UNATTENDED_FROM=0
 STEP_WIDTH=80
 step_pid=""
 BLOCKED_REASON=""
@@ -1151,9 +1154,22 @@ report_blocked() {
     printf '\n'
 }
 
+format_duration() {
+    if [ "$1" -ge 3600 ]; then
+        printf '%dh%02dm' "$(($1 / 3600))" "$((($1 % 3600) / 60))"
+    elif [ "$1" -ge 60 ]; then
+        printf '%dm%02ds' "$(($1 / 60))" "$(($1 % 60))"
+    else
+        printf '%ds' "$1"
+    fi
+}
+
 report_next_steps() {
     printf '\n'
     say "ready" "the simulator is installed"
+    if [ "$UNATTENDED_FROM" -gt 0 ]; then
+        note "took $(format_duration "$(($(date +%s 2>/dev/null || echo "$UNATTENDED_FROM") - UNATTENDED_FROM))") after your last answer"
+    fi
     printf '\n'
     # No script can cd its parent's shell, so the cd is the user's own first
     # step -- and everything below is written to follow it.
@@ -1215,6 +1231,7 @@ main() {
     # wizard needs all three. Everything that can prompt -- sudo included --
     # is asked before the downloads rather than in the middle of them.
     ask_llm_backend
+    UNATTENDED_FROM=$(date +%s 2>/dev/null || echo 0)
     prime_sudo_if_needed
     ensure_git
     ensure_uv

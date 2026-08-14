@@ -31,7 +31,17 @@ INNATE_DIR="${INNATE_DIR:-$(pwd)/innate-os}"
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 DOCKER_INSTALL_URL="https://get.docker.com"
 GL_PACKAGES="libegl1 libgl1 libopengl0 libosmesa6"
-MIN_FREE_GB=20
+# Disk each step needs, in GB. Measured, not guessed: the OS image is 1.4 GB
+# compressed over 28 layers (~3.5 GB unpacked), the asset image 0.13 GB
+# compressed / 332 MB stored plus 450 MB extracted to sim/assets, the viewer
+# bundle ~1 MB, and the host uv environment 128 MB. The rest of the runtime
+# figure is the colcon build and ccache volumes.
+DISK_GB_DOCKER=2
+DISK_GB_UV=1
+DISK_GB_RENDER=1
+DISK_GB_CLONE=1
+DISK_GB_RUNTIME=8
+DISK_HEADROOM_GB=2
 DOCKER_WAIT_S=180
 LOG_FILE="${INNATE_INSTALL_LOG:-$HOME/.innate-install.log}"
 VERBOSE="${INNATE_VERBOSE:-0}"
@@ -43,6 +53,7 @@ NEED_RELOGIN=0
 INTERACTIVE=0
 PLAN=""
 PLAN_N=0
+DISK_NEEDED_GB=$DISK_HEADROOM_GB
 DISK_FREE_GB=""
 DISK_TARGET=""
 SUDO_PRIMED=0
@@ -334,8 +345,11 @@ confirm() {
     [ "$confirm_yes" -eq 1 ]
 }
 
+# plan_add <text> <GB it needs>: the estimate is a sum over the steps that
+# will actually run, so someone who already has Docker is not quoted for it.
 plan_add() {
     PLAN_N=$((PLAN_N + 1))
+    DISK_NEEDED_GB=$((DISK_NEEDED_GB + $2))
     PLAN="$PLAN    $PLAN_N) $1
 "
 }
@@ -398,39 +412,39 @@ uv_installed() {
 }
 
 build_plan() {
-    have git || plan_add "Install git (with your package manager)"
+    have git || plan_add "Install git (with your package manager)" 1
     have docker || {
         if [ "$PLATFORM" = "macos" ]; then
-            plan_add "Install Docker Desktop (Homebrew cask)"
+            plan_add "Install Docker Desktop (Homebrew cask)" "$DISK_GB_DOCKER"
         else
-            plan_add "Install Docker Engine + Compose (from $DOCKER_INSTALL_URL, needs sudo)"
+            plan_add "Install Docker Engine + Compose (from $DOCKER_INSTALL_URL, needs sudo)" "$DISK_GB_DOCKER"
         fi
     }
-    uv_installed || plan_add "Install uv, which runs the physics world (user-local, no sudo)"
+    uv_installed || plan_add "Install uv, which runs the physics world (user-local, no sudo)" "$DISK_GB_UV"
     if [ "$PLATFORM" != "macos" ] && have apt-get; then
-        plan_add "Install the rendering libraries: $GL_PACKAGES (needs sudo)"
+        plan_add "Install the rendering libraries: $GL_PACKAGES (needs sudo)" "$DISK_GB_RENDER"
     fi
     if [ -d "$INNATE_DIR/.git" ]; then
-        plan_add "Update the innate-os checkout in $INNATE_DIR"
+        plan_add "Update the innate-os checkout in $INNATE_DIR" 0
     else
-        plan_add "Clone innate-os ($REF) into $INNATE_DIR"
+        plan_add "Clone innate-os ($REF) into $INNATE_DIR" "$DISK_GB_CLONE"
     fi
     # Never a surprise at the confirmation prompt: this is the step that asks
     # for a key and then spends several GB of someone's connection.
-    plan_add "Ask how the agent reaches a cloud LLM, then download the simulator (a few GB)"
+    plan_add "Ask how the agent reaches a cloud LLM, then download the simulator" "$DISK_GB_RUNTIME"
 }
 
 # Stated where the decision is made, not warned about above it: running out of
 # disk half way through a multi-gigabyte pull is the expensive way to find out.
 report_disk() {
     if [ -z "$DISK_FREE_GB" ]; then
-        printf '  %sAbout %s GB of disk is needed.%s\n\n' "$DIM" "$MIN_FREE_GB" "$NC"
-    elif [ "$DISK_FREE_GB" -lt "$MIN_FREE_GB" ]; then
+        printf '  %sAbout %s GB of disk is needed.%s\n\n' "$DIM" "$DISK_NEEDED_GB" "$NC"
+    elif [ "$DISK_FREE_GB" -lt "$DISK_NEEDED_GB" ]; then
         printf '  %sNeeds about %s GB of disk, but %s has only %s GB free.%s\n\n' \
-            "$YELLOW" "$MIN_FREE_GB" "$DISK_TARGET" "$DISK_FREE_GB" "$NC"
+            "$YELLOW" "$DISK_NEEDED_GB" "$DISK_TARGET" "$DISK_FREE_GB" "$NC"
     else
         printf '  %sDisk: about %s GB needed, %s GB free on %s.%s\n\n' \
-            "$DIM" "$MIN_FREE_GB" "$DISK_FREE_GB" "$DISK_TARGET" "$NC"
+            "$DIM" "$DISK_NEEDED_GB" "$DISK_FREE_GB" "$DISK_TARGET" "$NC"
     fi
 }
 

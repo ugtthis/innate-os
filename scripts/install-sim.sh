@@ -275,6 +275,18 @@ terminal_width() {
 
 # Privileged steps run in the background, where a password prompt would hang
 # invisibly. Ask for it here, in the foreground, once.
+prime_sudo_if_needed() {
+    [ "$PLATFORM" = "macos" ] && return 0
+    if ! have docker || { have apt-get && ! have_render_libs; }; then
+        prime_sudo
+    fi
+}
+
+have_render_libs() {
+    # A cheap proxy for "apt would have work to do".
+    [ -e /usr/lib/x86_64-linux-gnu/libEGL.so.1 ] || [ -e /usr/lib/aarch64-linux-gnu/libEGL.so.1 ]
+}
+
 prime_sudo() {
     [ "$SUDO_PRIMED" -eq 1 ] && return 0
     SUDO_PRIMED=1
@@ -561,9 +573,10 @@ build_plan() {
     else
         plan_add "Clone innate-os ($REF) into $INNATE_DIR" "$DISK_GB_CLONE"
     fi
-    # Never a surprise at the confirmation prompt: this is the step that asks
-    # for a key and then spends several GB of someone's connection.
-    plan_add "Ask how the agent reaches a cloud LLM, then download the simulator" "$DISK_GB_RUNTIME"
+    # Two entries because they are now two phases: the question comes right
+    # after the clone, and everything slow happens after you have answered it.
+    plan_add "Ask how the agent reaches a cloud LLM" 0
+    plan_add "Download the simulator, so the first start is a start" "$DISK_GB_RUNTIME"
 }
 
 # Stated where the decision is made, not warned about above it: running out of
@@ -827,29 +840,116 @@ exec_in_docker_group() {
     fi
 }
 
-run_setup() {
-    # setup owns the rest: prerequisite versions, the agent key, and the
-    # runtime download that makes the first `up` a start rather than a wait.
-    # A command the reader retypes, so the path is quoted like every other one.
-    setup_failed="Setup did not finish (see above). Fix the problem, then rerun:
-  cd $(display_path "$INNATE_DIR") && ./innate-sim setup"
+# Asked while the user is still at the keyboard, right after the clone, so
+# everything slow that follows can run unattended. Needs the checkout (the
+# wizard lives in the launcher) and uv (which supplies the Python it runs on).
+ask_setup_questions() {
     printf '\n'
-
-    if [ "$NEED_RELOGIN" -eq 0 ]; then
-        with_tty sh -c "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup" || die "$setup_failed"
+    if with_docker_group_or_plain "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup --no-prefetch"; then
         return 0
     fi
+    die "Could not save your key (see above). Fix the problem, then rerun:
+  cd $(display_path "$INNATE_DIR") && ./innate-sim setup"
+}
 
-    # This shell was started before the docker group was granted, so it cannot
-    # reach the socket -- but a NEW process can be given the group without a
-    # new login session (see with_docker_group).
-    if with_docker_group "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup"; then
+# The long half: images, geometry, the world's Python environment. No prompts.
+run_prefetch() {
+    printf '\n'
+    if with_docker_group_or_plain "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup --prefetch-only"; then
+        return 0
+    fi
+    die "The download did not finish (see above). Fix the problem, then rerun:
+  cd $(display_path "$INNATE_DIR") && ./innate-sim setup"
+}
+
+# Under the docker group when this shell predates it, plainly when it does not.
+with_docker_group_or_plain() {
+    if [ "$NEED_RELOGIN" -eq 0 ]; then
+        with_tty sh -c "$1"
+        return $?
+    fi
+    if with_docker_group "$1"; then
         return 0
     elif [ $? -ne "$NO_GROUP_ROUTE" ]; then
-        die "$setup_failed"
+        return 1
     fi
     report_relogin
     exit 0
+}
+
+report_blocked() {
+    printf '\n'
+    labelled "blocked" "$YELLOW" "$BLOCKED_REASON"
+    printf '\n'
+    # The installer, not `innate-sim setup`: a Docker installed by hand brings
+    # its own Compose, which may be a 5.x that cannot mount the sim's assets --
+    # setup would only refuse it, while this fixes it and carries on.
+    printf '  %s%8s%s  when that is done, run this again:\n\n' "$BOLD" "next" "$NC"
+    printf '  %8s  cd %s\n' "" "$(display_path "$INNATE_DIR")"
+    printf '  %8s  sh scripts/install-sim.sh\n\n' ""
+    note "everything else is installed and the checkout is ready, so it will be quick"
+    printf '\n'
+}
+
+# The launcher's wordmark (dashboard.ASCII_BANNER) and its green-to-gold
+# gradient, so the install ends in the same skin the dashboard opens in.
+logo_color() {
+    [ -n "$NC" ] || return 0
+    if [ "$TRUECOLOR" -eq 0 ]; then
+        printf '\033[36m'
+        return 0
+    fi
+    case "$1" in
+        1) printf '\033[38;2;119;202;155m' ;;
+        2) printf '\033[38;2;140;199;140m' ;;
+        3) printf '\033[38;2;164;196;126m' ;;
+        4) printf '\033[38;2;185;194;115m' ;;
+        *) printf '\033[38;2;203;192;108m' ;;
+    esac
+}
+
+print_logo() {
+    i=0
+    while IFS= read -r line; do
+        i=$((i + 1))
+        printf '%s%s%s%s\n' "$(logo_color "$i")" "$BOLD" "$line" "$NC"
+    done <<'EOF'
+ ___ _   _ _   _    _  _____ _____
+|_ _| \ | | \ | |  / \|_   _| ____|
+ | ||  \| |  \| | / _ \ | | |  _|
+ | || |\  | |\  |/ ___ \| | | |___
+|___|_| \_|_| \_/_/   \_\_| |_____|
+EOF
+}
+
+print_intro() {
+    printf '\n'
+    print_logo
+    printf '  %ssimulator installer%s\n\n' "$DIM" "$NC"
+}
+
+detect_editor() {
+    for candidate in cursor code windsurf zed subl; do
+        if have "$candidate"; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+report_blocked() {
+    printf '\n'
+    labelled "blocked" "$YELLOW" "$BLOCKED_REASON"
+    printf '\n'
+    # The installer, not `innate-sim setup`: a Docker installed by hand brings
+    # its own Compose, which may be a 5.x that cannot mount the sim's assets --
+    # setup would only refuse it, while this fixes it and carries on.
+    printf '  %s%8s%s  when that is done, run this again:\n\n' "$BOLD" "next" "$NC"
+    printf '  %8s  cd %s\n' "" "$(display_path "$INNATE_DIR")"
+    printf '  %8s  sh scripts/install-sim.sh\n\n' ""
+    note "everything else is installed and the checkout is ready, so it will be quick"
+    printf '\n'
 }
 
 report_relogin() {
@@ -981,11 +1081,17 @@ main() {
     build_plan
     review_plan
 
+    # Questions first: git, uv and the clone are quick and silent, and the
+    # wizard needs all three. Everything that can prompt -- sudo included --
+    # is asked before the downloads rather than in the middle of them.
+    prime_sudo_if_needed
     ensure_git
-    ensure_docker
     ensure_uv
-    ensure_render_libs
     clone_repo
+    ask_setup_questions
+
+    ensure_docker
+    ensure_render_libs
 
     if [ -n "$BLOCKED_REASON" ]; then
         # Everything else is in place; what is left needs their Docker, so
@@ -993,7 +1099,7 @@ main() {
         report_blocked
         exit 0
     fi
-    run_setup
+    run_prefetch
     report_next_steps
     offer_to_start
 }

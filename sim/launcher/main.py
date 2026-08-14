@@ -275,19 +275,26 @@ def cmd_logs(target: str, lines: int | None = None) -> None:
     print(tail_file(path, limit=lines or 120))
 
 
-def cmd_setup(config: dict[str, object], *, prefetch: bool = True) -> None:
+def cmd_setup(config: dict[str, object], *, prefetch: bool = True, configure: bool = True) -> None:
+    """Ask which key the agent thinks with, then download what `up` would.
+
+    The two halves are separable because the installer asks everything before
+    it installs anything: it runs `--no-prefetch` right after the clone, while
+    the user is still at the keyboard, and `--prefetch-only` once Docker is in
+    place -- by which time nobody has to be watching.
+    """
     print_banner()
-    ensure_docker_available(command_hint=f"{CLI_SIM} setup")
-    ensure_uv_prerequisite()
-    # The key question first, the long download second: a multi-gigabyte
-    # prefetch that stops on a prompt is one the user walks away from.
-    configure_brain_backend(config)
+    if configure:
+        configure_brain_backend(config)
     if prefetch:
+        ensure_docker_available(command_hint=f"{CLI_SIM} setup")
+        ensure_uv_prerequisite()
         prefetch_runtime(config)
-    success("Simulator setup is ready.")
+    success("Simulator setup is ready." if prefetch else "Keys saved.")
     print(f"OS secrets: {ENV_PATH}")
-    print(f"Sim config: {SIM_CONFIG_PATH}")
-    log(f"Start the simulator with `{CLI_SIM} up`.")
+    if prefetch:
+        print(f"Sim config: {SIM_CONFIG_PATH}")
+        log(f"Start the simulator with `{CLI_SIM} up`.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -302,6 +309,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-prefetch",
         action="store_true",
         help="Configure keys only; leave the images and assets for the first `up` to download",
+    )
+    setup_parser.add_argument(
+        "--prefetch-only",
+        action="store_true",
+        help="Download the runtime without asking about keys again (they are already set)",
     )
     up_parser = sim_subparsers.add_parser(
         "up",
@@ -386,7 +398,7 @@ def main() -> int:
         config = get_config()
 
         if args.sim_command == "setup":
-            cmd_setup(config, prefetch=not args.no_prefetch)
+            cmd_setup(config, prefetch=not args.no_prefetch, configure=not args.prefetch_only)
         elif args.sim_command == "up":
             cmd_up(
                 config,

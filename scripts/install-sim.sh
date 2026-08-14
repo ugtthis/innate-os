@@ -55,6 +55,8 @@ DOCKER_WAIT_S=180
 LOG_FILE="${INNATE_INSTALL_LOG:-$HOME/.innate-install.log}"
 VERBOSE="${INNATE_VERBOSE:-0}"
 LOG_TAIL_ROWS=3
+# Distinct from any exit status a real command produces.
+NO_GROUP_ROUTE=97
 # Survives sudo's env_reset and sg, which inheritance does not.
 BANNER_SHOWN="INNATE_BANNER_SHOWN=1"
 
@@ -69,6 +71,7 @@ DISK_FREE_GB=""
 DISK_TARGET=""
 SUDO_PRIMED=0
 STEP_ACTIVE=0
+STEP_WIDTH=80
 step_pid=""
 DOCKER_BROKEN=0
 ADOPTED_CHECKOUT=0
@@ -156,6 +159,12 @@ step() {
     shift 3
     if [ -z "$NC" ] || [ "$VERBOSE" != "0" ]; then
         say "$step_label" "$step_msg"
+        if [ "$VERBOSE" != "0" ]; then
+            # Verbose means the output is on screen AND in the log; tee loses
+            # the command's status, so it is carried out through a file.
+            { "$@" 2>&1; printf '%s' "$?" >"$TMPDIR_INSTALL/step-status"; } | tee -a "$LOG_FILE"
+            return "$(cat "$TMPDIR_INSTALL/step-status")"
+        fi
         "$@" >>"$LOG_FILE" 2>&1 || return 1
         return 0
     fi
@@ -163,6 +172,7 @@ step() {
     "$@" >>"$LOG_FILE" 2>&1 &
     step_pid=$!
     STEP_ACTIVE=1
+    STEP_WIDTH=$(terminal_width)
     hide_cursor
     step_n=0
     while kill -0 "$step_pid" 2>/dev/null; do
@@ -185,7 +195,9 @@ step() {
 # rather than a spinner that cannot be told apart from a hang. Always the same
 # number of rows, so the cursor can be walked back over them.
 draw_step_frame() {
-    frame_width=$(terminal_width)
+    # Measured once per step, in step(): this runs eight times a second, and
+    # a terminal resized mid-step costs one slightly-wrong frame.
+    frame_width=$STEP_WIDTH
     # "  " + 8 label + "  " + spinner + " " = 14 before the message, then
     # "  " + elapsed + "s" after it; the log rows spend 14 on "  " + 8 + "  | ".
     frame_room=$((frame_width - 17 - ${#2}))
@@ -399,7 +411,12 @@ confirm() {
         read -r reply <&3 || reply=""
         case "$reply" in
             y | Y | yes | YES) return 0 ;;
-            "") [ "$confirm_default" != "no" ] ;;
+            # Explicit returns: falling out of the case would carry on into
+            # the raw-mode prompt below, which is the path that just failed.
+            "")
+                if [ "$confirm_default" = "no" ]; then return 1; fi
+                return 0
+                ;;
             *) return 1 ;;
         esac
     fi
@@ -517,6 +534,9 @@ build_plan() {
             plan_add "Install Docker Engine + Compose (from $DOCKER_INSTALL_URL, needs sudo)" "$DISK_GB_DOCKER"
         fi
     }
+    if have docker && [ "$(compose_major)" -ge 5 ] 2>/dev/null; then
+        plan_add "Install Docker Compose 2.x, which the simulator needs (5.x cannot mount its assets)" 0
+    fi
     uv_installed || plan_add "Install uv, which runs the physics world (user-local, no sudo)" "$DISK_GB_UV"
     if [ "$PLATFORM" != "macos" ] && have apt-get; then
         plan_add "Install the rendering libraries: $GL_PACKAGES (needs sudo)" "$DISK_GB_RENDER"
@@ -603,7 +623,6 @@ start_docker_daemon() {
 }
 
 install_docker_macos() {
-    have brew || die "Docker Desktop is not installed, and Homebrew is not available to install it. Download it from https://docs.docker.com/desktop/install/mac-install/, open it once, then rerun this command."
     # The cask was renamed docker -> docker-desktop; accept either, so this
     # works on both old and new Homebrew.
     brew install --cask docker-desktop || brew install --cask docker
@@ -643,6 +662,10 @@ docker_group_granted_here() { [ -f "$TMPDIR_INSTALL/docker-group-granted" ]; }
 ensure_docker() {
     if ! have docker; then
         if [ "$PLATFORM" = "macos" ]; then
+            # Checked out here, not inside the step: a step's output goes to
+            # the log, and this is the line the reader needs on screen.
+            have brew || die "Docker Desktop is not installed, and Homebrew is not available to install it.
+Download it from https://docs.docker.com/desktop/install/mac-install/, open it once, then rerun."
             step "docker" "Installing Docker Desktop" "Docker Desktop installed" install_docker_macos || die "Could not install Docker Desktop."
         else
             prime_sudo
@@ -860,7 +883,6 @@ clone_repo() {
         git ls-remote --exit-code --heads "$REPO_URL" "$REF" >/dev/null 2>&1 ||
             die "$REPO_URL has no branch named $REF. Set INNATE_SIM_REF to one that exists (main, for the development tip), or report this at https://discord.gg/innate."
         step "repo" "Cloning innate-os into $INNATE_DIR" "cloned into $INNATE_DIR" clone_checkout || die "Could not clone $REPO_URL."
-        # Blobless rather than shallow: full history for log/bisect at a
     fi
     note "$REF at $(git -C "$INNATE_DIR" rev-parse --short HEAD)"
 }
@@ -869,14 +891,16 @@ clone_repo() {
 # `sg` is the direct way; `sudo -u you` is the same effect by another route,
 # because sudo re-reads the target user's groups from the database -- and
 # minimized WSL images ship neither sg nor newgrp (both live in `passwd`).
-# Returns 127 when neither exists, which callers read as "cannot help here".
+# Returns NO_GROUP_ROUTE when neither exists -- not 127, which the inner
+# shell also returns for a command it cannot find, and which would turn a
+# failed setup into a cheerful "log out and back in".
 with_docker_group() {
     if have sg; then
         with_tty sg docker -c "$1"
     elif have sudo; then
         with_tty sudo -u "$(id -un)" -- sh -c "$1"
     else
-        return 127
+        return "$NO_GROUP_ROUTE"
     fi
 }
 
@@ -907,7 +931,7 @@ run_setup() {
     # new login session (see with_docker_group).
     if with_docker_group "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup"; then
         return 0
-    elif [ $? -ne 127 ]; then
+    elif [ $? -ne "$NO_GROUP_ROUTE" ]; then
         die "$setup_failed"
     fi
     report_relogin

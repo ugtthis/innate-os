@@ -188,10 +188,10 @@ def docker_pull_progress(output: str) -> str | None:
     downloaded = sum(float(layer["done"]) for layer in layers.values())
     complete = sum(1 for layer in layers.values() if str(layer["status"]).startswith(_PULLED))
     fraction = progress / len(layers)
-    return (
-        f"{render_progress_bar(fraction)} {fraction * 100:3.0f}%  "
-        f"{format_bytes(downloaded)}  {DIM}{complete}/{len(layers)} layers{NC}"
-    )
+    # Only when docker actually reported sizes: its non-TTY output often has
+    # none, and "0 MB" beside a moving bar reads as a stalled download.
+    size = f"{format_bytes(downloaded)}  " if downloaded else ""
+    return f"{render_progress_bar(fraction)} {fraction * 100:3.0f}%  {size}{DIM}{complete}/{len(layers)} layers{NC}"
 
 
 def run_logged_with_heartbeat(
@@ -330,7 +330,21 @@ def _docker_group_argv(command: str) -> list[str] | None:
         ["sudo", "-n", "true"], cwd=Path.cwd(), env=os.environ.copy()
     ):
         return None
-    return ["sudo", "-n", "-u", pwd.getpwuid(os.getuid()).pw_name, "--", "sh", "-c", command]
+    # `env VAR=1` in the argv, because sudo's env_reset drops the guard this
+    # function's caller just set -- and a guard that silently vanishes is not
+    # one. See DOCKER_GROUP_REEXEC_ENV.
+    return [
+        "sudo",
+        "-n",
+        "-u",
+        pwd.getpwuid(os.getuid()).pw_name,
+        "--",
+        "env",
+        f"{DOCKER_GROUP_REEXEC_ENV}=1",
+        "sh",
+        "-c",
+        command,
+    ]
 
 
 def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: bool = True) -> None:
@@ -473,7 +487,7 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
         command_hint,
         COMPOSE_INSTALL_URL,
     )
-    _refuse_broken_compose(compose.stdout, command_hint)
+    _refuse_broken_compose(compose.stdout, command_hint)  # only the verbs that mount images
 
 
 # Docker 29.0.0 names an image mount's layer directory after the hex of the whole
@@ -554,6 +568,11 @@ def _refuse_broken_compose(version_output: str | None, command_hint: str) -> Non
     if version is None or version[:3] < BROKEN_COMPOSE_IMAGE_MOUNTS_SINCE:
         return
     running = ".".join(map(str, version))
+    if command_hint.rsplit(maxsplit=1)[-1] not in IMAGE_MOUNT_VERBS:
+        # `down`, `clean` and `status` need no image mount, and refusing them
+        # would leave a running stack with no way to stop it from the launcher.
+        warn(f"Docker Compose {running} cannot mount the sim viewer's assets, so `{CLI_SIM} up` will refuse.")
+        return
     raise StackError(
         f"Docker Compose {running} cannot mount the sim viewer's assets: it resolves a\n"
         "`type: image` mount to the image's manifest digest and passes that as an image ID,\n"
@@ -1874,19 +1893,33 @@ def prefetch_runtime(config: dict[str, object]) -> None:
     is a start rather than a multi-gigabyte download.
 
     Every step is idempotent and individually non-fatal: a prefetch that only
-    gets half way leaves `up` with less to do, never with a broken state.
+    gets half way leaves `up` with less to do, never with a broken state --
+    which is why a failing phase is reported and stepped over rather than
+    raised, after the keys the user just entered have been written.
     """
     print()
-    with live_step("assets", "Downloading the world geometry", "world geometry"):
-        ensure_sim_assets(config)
-    with live_step("skills", "Downloading the skill assets", "skill assets"):
-        ensure_skill_assets(config)
-    with live_step("viewer", "Fetching the 3D viewer bundle", "3D viewer bundle"):
-        ensure_sim_viewer_bundle(config, offline=False)
-    with live_step("image", "Pulling the Innate OS image", "Innate OS image"):
-        _prefetch_os_image(config)
-    with live_step("world", "Preparing the sim world environment", "sim world environment"):
-        _prefetch_world_env(config)
+    phases: list[tuple[str, str, str, Callable[[], None]]] = [
+        ("assets", "Downloading the world geometry", "world geometry", lambda: ensure_sim_assets(config)),
+        ("skills", "Downloading the skill assets", "skill assets", lambda: ensure_skill_assets(config)),
+        (
+            "viewer",
+            "Fetching the 3D viewer bundle",
+            "3D viewer bundle",
+            lambda: ensure_sim_viewer_bundle(config, offline=False),
+        ),
+        ("image", "Pulling the Innate OS image", "Innate OS image", lambda: _prefetch_os_image(config)),
+        ("world", "Preparing the sim world environment", "sim world environment", lambda: _prefetch_world_env(config)),
+    ]
+    for label, doing, done, phase in phases:
+        with live_step(label, doing, done) as step:
+            try:
+                phase()
+            except StackError as exc:
+                # One phase failing must not throw away the rest, nor the keys
+                # already written: `up` fetches whatever is missing anyway, so
+                # a network blip costs a retry rather than the whole setup.
+                step.ok = False
+                warn(f"{exc}\n`{CLI_SIM} up` will fetch this when you start the simulator.")
     print()
 
 

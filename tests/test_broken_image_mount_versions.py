@@ -98,6 +98,14 @@ def test_a_working_compose_is_accepted(version):
     runtime._refuse_broken_compose(f"Docker Compose version v{version}", f"{runtime.CLI_SIM} up")
 
 
+@pytest.mark.parametrize("verb", ["down", "clean", "status"])
+def test_a_broken_compose_still_lets_you_stop_the_stack(warnings, verb):
+    """Refusing these would strand a running stack: they create no container,
+    so they need no image mount, and `down` is how you recover."""
+    runtime._refuse_broken_compose("Docker Compose version v5.4.0", f"{runtime.CLI_SIM} {verb}")
+    assert len(warnings) == 1 and "5.4.0" in warnings[0]
+
+
 def test_an_unparseable_compose_version_is_accepted():
     """Same reasoning as the daemon check: an unrecognised build string is not
     evidence of a broken one."""

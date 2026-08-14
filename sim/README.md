@@ -82,7 +82,7 @@ sudo apt install -y --allow-downgrades docker-compose-plugin=$V
 Then let your user talk to Docker:
 
 ```bash
-sudo usermod -aG docker $USER && newgrp docker
+sudo usermod -aG docker $USER
 ```
 
 Install the rendering libraries. On a headless server or VM these provide

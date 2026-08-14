@@ -335,7 +335,10 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
                 "On Ubuntu (including WSL):    sudo apt install docker.io docker-compose-v2\n"
                 "On Debian / Raspberry Pi OS:  curl -fsSL https://get.docker.com | sudo sh\n"
                 "then let your user talk to Docker:\n"
-                "  sudo usermod -aG docker $USER && newgrp docker    # newgrp applies it to this shell\n"
+                "  sudo usermod -aG docker $USER\n"
+                "then open a new login session -- or, if `newgrp` is installed (it ships in the\n"
+                "`passwd` package, which minimized WSL images leave out), `newgrp docker` applies\n"
+                "it to this shell.\n"
                 f"Other platforms: {DOCKER_INSTALL_URL}"
             )
         raise StackError(
@@ -369,7 +372,10 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
             raise StackError(
                 "Docker is running, but your user is not allowed to talk to it (permission denied "
                 "on the Docker socket).\n"
-                "  sudo usermod -aG docker $USER && newgrp docker    # newgrp applies it to this shell\n"
+                "  sudo usermod -aG docker $USER\n"
+                "then open a new login session -- or, if `newgrp` is installed (it ships in the\n"
+                "`passwd` package, which minimized WSL images leave out), `newgrp docker` applies\n"
+                "it to this shell.\n"
                 f"Then rerun `{command_hint}` in that shell (new logins have it everywhere)."
             )
         daemon_unreachable = (

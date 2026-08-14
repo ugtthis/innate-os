@@ -751,7 +751,8 @@ run_setup() {
 
 report_relogin() {
     printf '\n%sAlmost there.%s Your user was just added to the docker group, which only\n' "$BOLD" "$NC"
-    printf 'takes effect in a new login session. Log out and back in, or run: newgrp docker\n'
+    printf 'takes effect in a new login session, so log out and back in. (newgrp docker\n'
+    printf 'does it without one, on the distros that ship the passwd package.)\n'
     printf 'Then finish the install:\n\n'
     printf '  cd %s && ./innate-sim setup\n\n' "$INNATE_DIR"
 }

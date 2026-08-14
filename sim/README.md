@@ -146,12 +146,14 @@ skips it and leaves the downloading to the first `up`.
 itself always runs on the robot (`brain_client`); the choice is only about
 which key it thinks with:
 
-- **Your own Gemini key** — the agent calls Google directly with a
-  [Gemini API key](https://aistudio.google.com/api-keys). Everything works
-  except voice: the web app's speak bar is disabled without a service key.
-- **Innate service key** — the agent calls Gemini through Innate's proxy with
-  your service key (it ships with a MARS robot). The full experience,
-  including voice — the robot speaks.
+- **Your own Gemini key** — the choice for most people. Create a
+  [Gemini API key](https://aistudio.google.com/api-keys) and the agent calls
+  Google directly with it. Everything works except voice: the web app's speak
+  bar is disabled without a service key.
+- **Innate service key** — pick this if you already have one: it ships with a
+  MARS robot, and we hand them out to people building on the simulator. The
+  agent calls Gemini through Innate's proxy and the robot speaks. Ask on
+  [Discord](https://discord.gg/innate) if you would like one.
 - **None** — no agent; you can still drive, navigate, and trigger skills
   manually.
 

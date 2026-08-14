@@ -539,15 +539,32 @@ print_intro() {
     printf '  %ssimulator installer%s\n\n' "$DIM" "$NC"
 }
 
+detect_editor() {
+    for candidate in cursor code windsurf zed subl; do
+        if have "$candidate"; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
 report_next_steps() {
     printf '\n'
     say "ready" "the simulator is installed"
     printf '\n'
-    # The launcher resolves its own repo root, so this works from any
-    # directory -- no `cd` for the user to remember, and none this script
-    # could perform for them anyway (a child cannot move its parent's shell).
-    printf '  %s%8s%s  %s/innate-sim up\n' "$BOLD" "start" "$NC" "$INNATE_DIR"
-    printf '  %s%8s%s  https://localhost %s(accept the self-signed certificate)%s\n' "$BOLD" "open" "$NC" "$DIM" "$NC"
+    # No script can cd its parent's shell, so the cd is the user's own first
+    # step -- and everything below is written to follow it.
+    printf '  %s%8s%s  cd %s\n' "$BOLD" "start" "$NC" "$INNATE_DIR"
+    printf '  %8s  ./innate-sim up\n\n' ""
+    if editor=$(detect_editor); then
+        printf '  %s%8s%s  %s .  %s— skills and agents live in workspace/%s\n' "$BOLD" "edit" "$NC" "$editor" "$DIM" "$NC"
+    else
+        printf '  %s%8s%s  open it in your editor  %s— skills and agents live in workspace/%s\n' \
+            "$BOLD" "edit" "$NC" "$DIM" "$NC"
+    fi
+    printf '  %s%8s%s  https://localhost  %s— once it is up (accept the self-signed certificate)%s\n' \
+        "$BOLD" "open" "$NC" "$DIM" "$NC"
     printf '  %s%8s%s  https://discord.gg/innate\n' "$BOLD" "help" "$NC"
     printf '\n'
     if [ "$NEED_RELOGIN" -eq 1 ]; then

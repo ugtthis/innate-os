@@ -7,6 +7,7 @@ import io
 import os
 import re
 import select
+import shlex
 import shutil
 import sys
 import threading
@@ -885,7 +886,7 @@ def render_status(
     ]
     editor = detect_editor()
     if editor:
-        destinations.append((DIM, "⌨", "Open it in your editor", f"{editor} {checkout}"))
+        destinations.append((DIM, "⌨", "Open it in your editor", f"{editor} {shlex.quote(checkout)}"))
     label_width = max(len(label) for _, _, label, _ in destinations)
     for colour, mark, label, value in destinations:
         print_dashboard_line(

@@ -268,6 +268,22 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 is_git_checkout() { git -C "$1" rev-parse --git-dir >/dev/null 2>&1; }
 
+# A path is user input: it can hold spaces, and it can hold an apostrophe --
+# which would close the quoting of any command we build around it. Both of
+# these produce something a shell reads back as one word.
+shell_quote() {
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+# The same, but left bare when nothing in it needs quoting, so the common
+# case stays copy-pasteable rather than defensively quoted.
+display_path() {
+    case "$1" in
+        *[!A-Za-z0-9._/-]*) shell_quote "$1" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
 # A blinking cursor parked after the last thing drawn reads as an unanswered
 # text prompt. cleanup() restores it, so no exit path can leave it hidden.
 hide_cursor() {
@@ -880,14 +896,14 @@ run_setup() {
     printf '\n'
 
     if [ "$NEED_RELOGIN" -eq 0 ]; then
-        with_tty sh -c "cd '$INNATE_DIR' && $BANNER_SHOWN ./innate-sim setup" || die "$setup_failed"
+        with_tty sh -c "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup" || die "$setup_failed"
         return 0
     fi
 
     # This shell was started before the docker group was granted, so it cannot
     # reach the socket -- but a NEW process can be given the group without a
     # new login session (see with_docker_group).
-    if with_docker_group "cd '$INNATE_DIR' && $BANNER_SHOWN ./innate-sim setup"; then
+    if with_docker_group "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup"; then
         return 0
     elif [ $? -ne 127 ]; then
         die "$setup_failed"
@@ -901,7 +917,7 @@ report_relogin() {
     printf 'takes effect in a new login session, so log out and back in. (newgrp docker\n'
     printf 'does it without one, on the distros that ship the passwd package.)\n'
     printf 'Then finish the install:\n\n'
-    printf '  cd %s && ./innate-sim setup\n\n' "$INNATE_DIR"
+    printf '  cd %s && ./innate-sim setup\n\n' "$(display_path "$INNATE_DIR")"
 }
 
 # The launcher's wordmark (dashboard.ASCII_BANNER) and its green-to-gold
@@ -956,7 +972,7 @@ report_docker_blocked() {
     say "blocked" "the simulator needs a Docker that can mount images"
     printf '\n'
     printf '  %s%8s%s  fix Docker (above), then:\n\n' "$BOLD" "next" "$NC"
-    printf '  %8s  cd %s\n' "" "$INNATE_DIR"
+    printf '  %8s  cd %s\n' "" "$(display_path "$INNATE_DIR")"
     printf '  %8s  ./innate-sim setup\n\n' ""
     note "everything else is installed and the checkout is ready"
     printf '\n'
@@ -968,7 +984,7 @@ report_next_steps() {
     printf '\n'
     # No script can cd its parent's shell, so the cd is the user's own first
     # step -- and everything below is written to follow it.
-    printf '  %s%8s%s  cd %s\n' "$BOLD" "start" "$NC" "$INNATE_DIR"
+    printf '  %s%8s%s  cd %s\n' "$BOLD" "start" "$NC" "$(display_path "$INNATE_DIR")"
     printf '  %8s  ./innate-sim up\n\n' ""
     if editor=$(detect_editor); then
         printf '  %s%8s%s  %s .  %s— skills and agents live in workspace/%s\n' "$BOLD" "edit" "$NC" "$editor" "$DIM" "$NC"
@@ -998,7 +1014,7 @@ offer_to_start() {
     if [ "$NEED_RELOGIN" -eq 1 ]; then
         # Same reason as run_setup: this process has no docker group, so
         # exec-ing the launcher directly would hand it a socket it cannot open.
-        exec_in_docker_group "$BANNER_SHOWN '$INNATE_DIR/innate-sim' up"
+        exec_in_docker_group "$BANNER_SHOWN $(shell_quote "$INNATE_DIR/innate-sim") up"
         report_relogin
         exit 0
     fi

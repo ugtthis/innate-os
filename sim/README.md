@@ -14,6 +14,22 @@ anything you build against the simulator works unchanged on a real MARS.
 
 ## Setup
 
+```bash
+curl -fsSL https://link.innate.bot/sim | sh
+```
+
+That is the whole install on macOS, Linux and WSL2: it asks before installing
+anything missing (Docker, uv, git, the Linux rendering libraries), clones this
+repository into `~/innate-os`, asks how the agent should reach a cloud LLM, and
+downloads the runtime — so the first `./innate-sim up` is a start, not a
+download. Then:
+
+```bash
+cd ~/innate-os && ./innate-sim up
+```
+
+Prefer to do it yourself? The rest of this section is the same setup by hand.
+
 You need two tools installed; everything else (world geometry, the Docker
 image, the ROS build) is provisioned automatically on first start:
 
@@ -88,9 +104,14 @@ installed makes the `docker` command hang in confusing ways.
 Then, from the repository root:
 
 ```bash
-./innate-sim setup     # checks prerequisites (offers to install uv) + configures your agent keys
+./innate-sim setup     # prerequisites + agent keys, then downloads the runtime
 ./innate-sim up        # starts everything; leave the live dashboard open
 ```
+
+`setup` downloads the images, the world geometry and the sim world's Python
+environment once it has your keys, which is the slow part; `up` then starts in
+a minute or two rather than after a multi-gigabyte download. `--no-prefetch`
+skips it and leaves the downloading to the first `up`.
 
 `setup` asks how the robot's AI agent reaches a cloud LLM. The agent loop
 itself always runs on the robot (`brain_client`); the choice is only about

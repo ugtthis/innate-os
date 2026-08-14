@@ -2,4 +2,22 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec python3 "$SCRIPT_DIR/sim/launcher/main.py" "$@"
+LAUNCHER="$SCRIPT_DIR/sim/launcher/main.py"
+
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+    exec python3 "$LAUNCHER" "$@"
+fi
+
+# macOS ships Python 3.9, which the launcher refuses. uv is a prerequisite
+# anyway and carries its own interpreters, so borrow one rather than making
+# people install a second Python. --no-project: the launcher is stdlib-only
+# and must not resolve the repo's dependencies to run.
+for uv in uv "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
+    if command -v "$uv" >/dev/null 2>&1; then
+        exec "$uv" run --no-project --python 3.11 --quiet python "$LAUNCHER" "$@"
+    fi
+done
+
+echo "Error: the Innate launcher requires Python 3.10 or newer, and none was found." >&2
+echo "Install uv (which brings its own):  curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+exit 1

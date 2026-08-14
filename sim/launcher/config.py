@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from dashboard import CYAN, GREEN, NC, YELLOW
+from dashboard import CYAN, GREEN, NC, YELLOW, active_step
 
 try:
     import tomllib as toml_parser
@@ -181,15 +181,30 @@ class DockerUnresponsiveError(StackError):
 
 
 def log(message: str) -> None:
+    # Inside a live step, progress IS the step's detail; printing it as its own
+    # line would scroll the spinner away one message at a time.
+    step = active_step()
+    if step is not None:
+        step.detail = message
+        return
     print(f"{CYAN}[innate]{NC} {message}")
 
 
 def success(message: str) -> None:
-    print(f"{GREEN}[ok]{NC} {message}")
+    _print_around_step(f"{GREEN}[ok]{NC} {message}")
 
 
 def warn(message: str) -> None:
-    print(f"{YELLOW}[warn]{NC} {message}")
+    _print_around_step(f"{YELLOW}[warn]{NC} {message}")
+
+
+def _print_around_step(line: str) -> None:
+    """Something worth keeping: print it above the spinner, which redraws."""
+    step = active_step()
+    if step is not None:
+        step.note(line)
+        return
+    print(line)
 
 
 def ensure_state_dir() -> None:

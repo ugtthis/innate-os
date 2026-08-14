@@ -6,6 +6,10 @@
 #
 #     curl -fsSL https://link.innate.bot/sim | sh
 #
+# It lives here so it can be read before it is piped to a shell, and so it
+# versions with the thing it installs. If you are reading this in a checkout
+# you already have, this script is not for you: run `./innate-sim setup`.
+#
 # Installs whatever is missing (Docker, uv, git, the Linux rendering
 # libraries), clones innate-os, and hands over to `./innate-sim setup`, which
 # asks for the agent key and downloads the runtime. Nothing here duplicates the
@@ -232,14 +236,78 @@ with_tty() {
     fi
 }
 
+# Control characters as values, since a case pattern cannot hold an escape.
+ESC=$(printf '\033')
+CR=$(printf '\rX')
+CR=${CR%X}
+ETX=$(printf '\003')
+
+# One keypress, named. dd because POSIX read has no single-character mode; the
+# X sentinel survives command substitution stripping a trailing newline.
+read_key() {
+    key=$(dd bs=1 count=1 <&3 2>/dev/null; printf X)
+    key=${key%X}
+    case "$key" in
+        "$ESC")
+            key=$(dd bs=1 count=2 <&3 2>/dev/null; printf X)
+            case "${key%X}" in
+                '[A') key=up ;;
+                '[B') key=down ;;
+                '[C') key=right ;;
+                '[D') key=left ;;
+                *) key=escape ;;
+            esac
+            ;;
+        "$CR" | '') key=enter ;;
+        "$ETX") key=interrupt ;;
+    esac
+}
+
+draw_confirm() {
+    if [ "$1" -eq 1 ]; then
+        printf '\r\033[K  %s%s%s   %s● Yes%s   %s○ No%s' \
+            "$BOLD" "$confirm_question" "$NC" "$GREEN" "$NC" "$DIM" "$NC"
+    else
+        printf '\r\033[K  %s%s%s   %s○ Yes%s   %s● No%s' \
+            "$BOLD" "$confirm_question" "$NC" "$DIM" "$NC" "$GREEN" "$NC"
+    fi
+}
+
+# Left/right between Yes and No, like the menus in the launcher. Falls back to
+# typing when the terminal cannot be put in raw mode.
 confirm() {
     [ "$INTERACTIVE" -eq 1 ] || return 0
-    printf '%s%s [Y/n]: %s' "$YELLOW" "$1" "$NC"
-    read -r reply <&3 || reply=""
-    case "$reply" in
-        "" | y | Y | yes | YES) return 0 ;;
-        *) return 1 ;;
-    esac
+    confirm_question=$1
+    if ! stty_saved=$(stty -g <&3 2>/dev/null); then
+        printf '  %s%s [Y/n]: %s' "$YELLOW" "$confirm_question" "$NC"
+        read -r reply <&3 || reply=""
+        case "$reply" in
+            "" | y | Y | yes | YES) return 0 ;;
+            *) return 1 ;;
+        esac
+    fi
+
+    confirm_yes=1
+    stty raw -echo <&3
+    while :; do
+        draw_confirm "$confirm_yes"
+        read_key
+        case "$key" in
+            left | right | h | l) confirm_yes=$((1 - confirm_yes)) ;;
+            y | Y) confirm_yes=1 ;;
+            n | N) confirm_yes=0 ;;
+            interrupt)
+                stty "$stty_saved" <&3
+                printf '\r\n'
+                on_interrupt
+                ;;
+            enter) break ;;
+        esac
+    done
+    stty "$stty_saved" <&3
+    draw_confirm "$confirm_yes"
+    printf '\n'
+    [ "$confirm_yes" -eq 1 ]
 }
 
 plan_add() {
@@ -278,7 +346,12 @@ check_install_dir() {
     # Nesting a checkout inside another repo confuses both; the cwd default
     # makes that a real possibility, since a piped installer runs wherever the
     # terminal happened to be.
-    if [ "$INNATE_DIR_EXPLICIT" -eq 0 ] && have git && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [ "$INNATE_DIR_EXPLICIT" -eq 0 ] && have git && enclosing=$(git rev-parse --show-toplevel 2>/dev/null); then
+        # This script's whole job is to produce a checkout, so running it from
+        # inside one is a misunderstanding worth answering rather than refusing.
+        if [ -x "$enclosing/innate-sim" ]; then
+            die "$enclosing is already an innate-os checkout -- this installer only clones one. You want: cd $enclosing && ./innate-sim setup"
+        fi
         die "$(pwd) is inside a git repository, so the simulator would be a checkout within a checkout. cd somewhere else, or set INNATE_DIR to where it should live."
     fi
     if [ -d "$INNATE_DIR" ] && [ ! -d "$INNATE_DIR/.git" ] && [ -n "$(ls -A "$INNATE_DIR" 2>/dev/null)" ]; then

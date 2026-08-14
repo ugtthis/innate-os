@@ -150,6 +150,183 @@ class DashboardRuntime:
             self.log_rev += 1
 
 
+SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+STEP_LABEL_WIDTH = 8
+SELECTED, UNSELECTED = "●", "○"
+
+
+def menus_supported() -> bool:
+    return bool(termios and tty and sys.stdin.isatty() and sys.stdout.isatty())
+
+
+@contextlib.contextmanager
+def _raw_terminal():
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        yield
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+
+
+def _read_key() -> str:
+    """One keypress as a name: up/down/left/right/enter, or the character."""
+    char = sys.stdin.read(1)
+    if char == "\x03":  # Ctrl-C: raw mode swallows the signal
+        raise KeyboardInterrupt
+    if char == "":
+        raise EOFError
+    if char in ("\r", "\n"):
+        return "enter"
+    if char != "\x1b":
+        return char
+    if sys.stdin.read(1) != "[":
+        return "escape"
+    return {"A": "up", "B": "down", "C": "right", "D": "left"}.get(sys.stdin.read(1), "escape")
+
+
+def _print_options(lines: list[str], *, redraw: bool) -> None:
+    if redraw:
+        sys.stdout.write(f"\033[{len(lines)}A")
+    for line in lines:
+        sys.stdout.write("\r\033[K" + line + "\n")
+    sys.stdout.flush()
+
+
+def select_one(question: str, options: list[tuple[str, str]], *, default: int = 0) -> int:
+    """Arrow-key single select; returns the chosen index.
+
+    `options` are (label, hint) pairs. Callers must check menus_supported()
+    first and offer a typed prompt when it is False -- a pipe or a dumb
+    terminal has no arrow keys to press.
+    """
+    index = max(0, min(default, len(options) - 1))
+    print(f"\n  {BOLD}{question}{NC}")
+    width = max(len(label) for label, _ in options)
+    redraw = False
+    with _raw_terminal():
+        while True:
+            lines = [
+                f"  {GREEN}{SELECTED}{NC} {BOLD}{label:<{width}}{NC}  {DIM}{hint}{NC}"
+                if position == index
+                else f"  {DIM}{UNSELECTED} {label:<{width}}  {hint}{NC}"
+                for position, (label, hint) in enumerate(options)
+            ]
+            _print_options(lines, redraw=redraw)
+            redraw = True
+            key = _read_key()
+            if key in ("up", "k"):
+                index = (index - 1) % len(options)
+            elif key in ("down", "j"):
+                index = (index + 1) % len(options)
+            elif key.isdigit() and 1 <= int(key) <= len(options):
+                index = int(key) - 1
+            elif key == "enter":
+                return index
+
+
+def confirm(question: str, *, default: bool = True) -> bool:
+    """Left/right yes-no. Same caller contract as select_one."""
+    yes = default
+    redraw = False
+    with _raw_terminal():
+        while True:
+            marks = [
+                f"{GREEN}{SELECTED} {BOLD}Yes{NC}" if yes else f"{DIM}{UNSELECTED} Yes{NC}",
+                f"{GREEN}{SELECTED} {BOLD}No{NC}" if not yes else f"{DIM}{UNSELECTED} No{NC}",
+            ]
+            _print_options([f"  {BOLD}{question}{NC}   {marks[0]}   {marks[1]}"], redraw=redraw)
+            redraw = True
+            key = _read_key()
+            if key in ("left", "right", "h", "l", "\t"):
+                yes = not yes
+            elif key in ("y", "Y"):
+                yes = True
+            elif key in ("n", "N"):
+                yes = False
+            elif key == "enter":
+                return yes
+
+
+class LiveStep:
+    """One line that spins while work happens and settles into a check mark.
+
+    The same shape scripts/install.sh draws for Docker and uv, so an install
+    that starts in the shell installer and finishes in the launcher reads as
+    one process. Whatever the step logs while it runs becomes the detail after
+    the message, rather than scrolling the line away.
+    """
+
+    def __init__(self, label: str, message: str) -> None:
+        self.label = label
+        self.message = message
+        self.detail = ""
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    @property
+    def live(self) -> bool:
+        return USE_COLOR and sys.stdout.isatty()
+
+    def start(self) -> None:
+        if not self.live:
+            print(f"  {self.label:>{STEP_LABEL_WIDTH}}  {self.message}")
+            return
+        self._thread = threading.Thread(target=self._animate, daemon=True)
+        self._thread.start()
+
+    def _render(self, mark: str) -> str:
+        detail = f"  {DIM}{self.detail}{NC}" if self.detail else ""
+        return f"  {CYAN}{self.label:>{STEP_LABEL_WIDTH}}{NC}  {mark} {self.message}{detail}"
+
+    def _animate(self) -> None:
+        frame = 0
+        while not self._stop.wait(0.12):
+            sys.stdout.write("\r\033[K" + self._render(SPINNER_FRAMES[frame % len(SPINNER_FRAMES)]))
+            sys.stdout.flush()
+            frame += 1
+
+    def note(self, message: str) -> None:
+        """Print a full line above the spinner, which redraws on its next tick."""
+        if self.live:
+            sys.stdout.write("\r\033[K")
+        print(message)
+
+    def finish(self, *, ok: bool = True) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join()
+        if self.live:
+            sys.stdout.write("\r\033[K")
+        self.detail = ""
+        print(self._render(f"{GREEN}✔{NC}" if ok else f"{RED}✗{NC}"))
+
+
+_active_step: LiveStep | None = None
+
+
+def active_step() -> LiveStep | None:
+    return _active_step
+
+
+@contextlib.contextmanager
+def live_step(label: str, message: str):
+    global _active_step
+    step = LiveStep(label, message)
+    previous, _active_step = _active_step, step
+    step.start()
+    try:
+        yield step
+    except BaseException:
+        step.finish(ok=False)
+        raise
+    else:
+        step.finish()
+    finally:
+        _active_step = previous
+
+
 def render_progress_bar(fraction: float, width: int = 22) -> str:
     filled = round(max(0.0, min(1.0, fraction)) * width)
     return f"{GREEN}{'█' * filled}{DIM}{'░' * (width - filled)}{NC}"

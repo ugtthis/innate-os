@@ -61,11 +61,21 @@ from config import (
     resolve_local_os_image,
     resolve_local_viewer_image,
     resolve_viewer_image,
-    success,
     viewer_tree_dirty,
     warn,
 )
-from dashboard import BOLD, DIM, GREEN, NC, RED, USE_COLOR, format_bytes, render_progress_bar
+from dashboard import (
+    BOLD,
+    DIM,
+    GREEN,
+    NC,
+    RED,
+    USE_COLOR,
+    active_step,
+    format_bytes,
+    live_step,
+    render_progress_bar,
+)
 
 DOCKER_INSTALL_URL = "https://docs.docker.com/get-started/get-docker/"
 COMPOSE_INSTALL_URL = "https://docs.docker.com/compose/install/linux/"
@@ -231,7 +241,10 @@ def run_logged_with_heartbeat(
                 elapsed = int(now - started)
                 stamp = f"{elapsed // 60}m{elapsed % 60:02d}s" if elapsed >= 60 else f"{elapsed}s"
                 progress = progress_formatter(appended) if progress_formatter and appended else None
-                if progress and live:
+                step = active_step()
+                if progress and step is not None:
+                    step.detail = f"{progress}  {stamp}"
+                elif progress and live:
                     print(f"\r\033[K  {progress}  {DIM}{stamp}{NC}", end="", flush=True)
                     drew_progress = True
                 elif progress:
@@ -1793,13 +1806,18 @@ def prefetch_runtime(config: dict[str, object]) -> None:
     Every step is idempotent and individually non-fatal: a prefetch that only
     gets half way leaves `up` with less to do, never with a broken state.
     """
-    log("Downloading the simulator runtime (a few GB on a cold machine)...")
-    ensure_sim_assets(config)
-    ensure_skill_assets(config)
-    ensure_sim_viewer_bundle(config, offline=False)
-    _prefetch_os_image(config)
-    _prefetch_world_env(config)
-    success("Simulator runtime downloaded.")
+    print()
+    with live_step("assets", "world geometry"):
+        ensure_sim_assets(config)
+    with live_step("skills", "skill assets"):
+        ensure_skill_assets(config)
+    with live_step("viewer", "3D viewer bundle"):
+        ensure_sim_viewer_bundle(config, offline=False)
+    with live_step("image", "Innate OS image"):
+        _prefetch_os_image(config)
+    with live_step("world", "sim world environment"):
+        _prefetch_world_env(config)
+    print()
 
 
 def _prefetch_os_image(config: dict[str, object]) -> None:

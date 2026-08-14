@@ -18,8 +18,15 @@ from config import (
     success,
     warn,
 )
-from dashboard import BOLD, CYAN, DIM, GREEN, NC, YELLOW
+from dashboard import BOLD, CYAN, DIM, GREEN, NC, YELLOW, confirm, menus_supported, select_one
 from runtime import UV_INSTALL_COMMAND, find_uv
+
+
+def _split_option(label: str) -> tuple[str, str]:
+    """Split `Name (hint)` into its parts, so the menu can dim the hint. The
+    typed prompt shows the same strings whole."""
+    name, sep, hint = label.partition(" (")
+    return (name, hint.rstrip(")")) if sep else (label, "")
 
 
 def is_interactive_terminal() -> bool:
@@ -42,6 +49,12 @@ def _is_active_env_assignment(line: str, key: str) -> bool:
 
 
 def _prompt_yes_no(question: str, *, default: bool = False) -> bool:
+    if menus_supported():
+        try:
+            return confirm(question, default=default)
+        except (KeyboardInterrupt, EOFError):
+            print()
+            raise SystemExit(1)  # noqa: B904
     default_label = "Y/n" if default else "y/N"
     while True:
         try:
@@ -228,6 +241,19 @@ def _use_service_key_for_run(config: dict[str, object], service_key: str) -> Non
 
 
 def _prompt_choice(question: str, options: dict[str, str], *, default: str) -> str:
+    if menus_supported():
+        keys = list(options)
+        try:
+            chosen = select_one(
+                question,
+                [_split_option(options[key]) for key in keys],
+                default=keys.index(default),
+            )
+        except (KeyboardInterrupt, EOFError):
+            print()
+            raise SystemExit(1)  # noqa: B904
+        return keys[chosen]
+
     print(f"{YELLOW}{question}{NC}")
     for key, label in options.items():
         marker = "  (default)" if key == default else ""

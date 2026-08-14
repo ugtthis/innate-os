@@ -28,7 +28,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from config import StackError, log
-from dashboard import DIM, NC, format_bytes, render_progress_bar
+from dashboard import DIM, NC, active_step, format_bytes, render_progress_bar
 
 REGISTRY = "ghcr.io"
 _TIMEOUT_S = 600
@@ -198,13 +198,18 @@ def manifest_for_image(image: str) -> dict:
 
 
 def _report_download(label: str, done: int, total: int, *, live: bool) -> None:
-    """One progress line: a bar in place on a terminal, an occasional log line
-    otherwise (silence reads as a hang on a cold ~85 MB download)."""
+    """One progress line: the enclosing step's detail when there is one, a bar
+    in place on a bare terminal, an occasional log line otherwise (silence
+    reads as a hang on a cold ~85 MB download)."""
+    bar = render_progress_bar(done / total if total else 0.0)
+    size = f"{format_bytes(done)} / {format_bytes(total)}" if total else format_bytes(done)
+    step = active_step()
+    if step is not None:
+        step.detail = f"{bar} {size}"
+        return
     if not live:
         log(f"Downloading {label}... {format_bytes(done)}" + (f" of {format_bytes(total)}" if total else ""))
         return
-    bar = render_progress_bar(done / total if total else 0.0)
-    size = f"{format_bytes(done)} / {format_bytes(total)}" if total else format_bytes(done)
     print(f"\r\033[K  {bar} {size}  {DIM}{label}{NC}", end="", flush=True)
 
 
@@ -233,7 +238,7 @@ def fetch_layer(repo: str, digest: str, dest, token: str, *, label: str = "layer
                 if time.monotonic() >= next_report:
                     _report_download(label, done, total, live=live)
                     next_report = time.monotonic() + (0.5 if live else 5.0)
-            if live:
+            if live and active_step() is None:
                 _report_download(label, done, total or done, live=True)
                 print()
     except HTTPError as exc:

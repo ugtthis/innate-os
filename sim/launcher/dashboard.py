@@ -292,7 +292,11 @@ class LiveStep:
 
     def _render(self, mark: str) -> str:
         detail = f"  {DIM}{self.detail}{NC}" if self.detail else ""
-        return f"  {CYAN}{self.label:>{STEP_LABEL_WIDTH}}{NC}  {mark} {self.message}{detail}"
+        line = f"  {CYAN}{self.label:>{STEP_LABEL_WIDTH}}{NC}  {mark} {self.message}{detail}"
+        # A line wider than the terminal wraps, and then \r returns to the
+        # start of the WRAPPED row -- every redraw leaves the previous one
+        # behind, which is how a spinner becomes a wall of repeated lines.
+        return clip_to_width(line, shutil.get_terminal_size((100, 40)).columns - 1)
 
     def _animate(self) -> None:
         frame = 0
@@ -340,6 +344,26 @@ def live_step(label: str, message: str):
         step.finish()
     finally:
         _active_step = previous
+
+
+def clip_to_width(text: str, width: int) -> str:
+    """Cut to `width` visible columns, keeping colour codes (which occupy
+    none) and closing with a reset so a cut mid-sequence cannot bleed."""
+    if visible_text_width(text) <= width:
+        return text
+    out: list[str] = []
+    visible = 0
+    index = 0
+    while index < len(text) and visible < width:
+        escape = ANSI_ESCAPE_RE.match(text, index)
+        if escape:
+            out.append(escape.group())
+            index = escape.end()
+            continue
+        out.append(text[index])
+        visible += char_display_width(text[index])
+        index += 1
+    return "".join(out) + NC
 
 
 def render_progress_bar(fraction: float, width: int = 22) -> str:

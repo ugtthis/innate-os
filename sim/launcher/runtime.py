@@ -242,8 +242,11 @@ def run_logged_with_heartbeat(
                 stamp = f"{elapsed // 60}m{elapsed % 60:02d}s" if elapsed >= 60 else f"{elapsed}s"
                 progress = progress_formatter(appended) if progress_formatter and appended else None
                 step = active_step()
-                if progress and step is not None:
-                    step.detail = f"{progress}  {stamp}"
+                if step is not None:
+                    # The step line already says what is happening; the detail
+                    # says how far along. Before docker's first layer line is
+                    # parseable that is just the clock.
+                    step.detail = f"{progress}  {stamp}" if progress else stamp
                 elif progress and live:
                     print(f"\r\033[K  {progress}  {DIM}{stamp}{NC}", end="", flush=True)
                     drew_progress = True

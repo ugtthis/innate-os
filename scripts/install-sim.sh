@@ -73,7 +73,7 @@ SUDO_PRIMED=0
 STEP_ACTIVE=0
 STEP_WIDTH=80
 step_pid=""
-DOCKER_BROKEN=0
+BLOCKED_REASON=""
 ADOPTED_CHECKOUT=0
 
 # Package managers ask questions no unattended install can answer, and
@@ -277,6 +277,10 @@ prime_sudo() {
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# Stop short without failing: the checkout and the other prerequisites are
+# still worth having, and the reason is printed at the end where it is read.
+blocked() { BLOCKED_REASON=$1; }
 
 is_git_checkout() { git -C "$1" rev-parse --git-dir >/dev/null 2>&1; }
 
@@ -659,20 +663,46 @@ docker_group_pending() {
 # rather than setting a variable this shell would never see.
 docker_group_granted_here() { [ -f "$TMPDIR_INSTALL/docker-group-granted" ]; }
 
+# Docker Desktop is the only Docker macOS has: get.docker.com is a Linux
+# package installer and refuses on Darwin, because containers need a Linux VM
+# and Desktop is the VM. So this is an app install, with an app's licence.
+offer_docker_desktop() {
+    macos_manual="Get it from https://docs.docker.com/desktop/install/mac-install/, open it once, then rerun this installer."
+    if ! have brew; then
+        blocked "Docker Desktop is not installed, and Homebrew is not here to install it.
+$macos_manual"
+        return 1
+    fi
+    printf '\n'
+    note "Homebrew can install Docker Desktop: about 1.5 GB, and macOS will ask for"
+    note "your password to link its command-line tools."
+    note "Docker Desktop is free for personal use and small businesses; larger"
+    note "companies need a paid subscription."
+    printf '\n'
+    if ! confirm "  Install Docker Desktop with Homebrew?"; then
+        blocked "Docker Desktop was not installed.
+$macos_manual"
+        return 1
+    fi
+    printf '\n'
+    # Before the step, never inside it: brew needs sudo for the /usr/local
+    # links, and a password prompt under a spinner is a hang with no message.
+    prime_sudo
+    step "docker" "Installing Docker Desktop" "Docker Desktop installed" install_docker_macos ||
+        die "Could not install Docker Desktop. Details: $LOG_FILE"
+}
+
 ensure_docker() {
     if ! have docker; then
         if [ "$PLATFORM" = "macos" ]; then
-            # Checked out here, not inside the step: a step's output goes to
-            # the log, and this is the line the reader needs on screen.
-            have brew || die "Docker Desktop is not installed, and Homebrew is not available to install it.
-Download it from https://docs.docker.com/desktop/install/mac-install/, open it once, then rerun."
-            step "docker" "Installing Docker Desktop" "Docker Desktop installed" install_docker_macos || die "Could not install Docker Desktop."
+            offer_docker_desktop || return 0
         else
             prime_sudo
             step "docker" "Installing Docker Engine + Compose" "Docker Engine + Compose installed" install_docker_linux || die "Could not install Docker."
         fi
     fi
 
+    [ -n "$BLOCKED_REASON" ] && return 0
     ensure_working_compose
     if docker_group_pending; then
         NEED_RELOGIN=1
@@ -683,9 +713,13 @@ Download it from https://docs.docker.com/desktop/install/mac-install/, open it o
         fi
         return 0
     fi
+    if [ "$PLATFORM" = "macos" ] && ! docker info >/dev/null 2>&1; then
+        note "starting Docker Desktop -- accept its terms if a window asks you to"
+    fi
     if ! step "docker" "Starting the Docker daemon" "Docker daemon running" start_docker_daemon; then
         if [ "$PLATFORM" = "macos" ]; then
-            die "Docker Desktop did not finish starting within ${DOCKER_WAIT_S}s. Open it, wait for it to settle, then rerun this command."
+            die "Docker Desktop did not finish starting within ${DOCKER_WAIT_S}s.
+It may be waiting for you to accept its terms -- check the Docker window, then rerun this installer."
         fi
         die "The Docker daemon is installed but did not start. Start it (sudo systemctl start docker) and rerun this command."
     fi
@@ -787,7 +821,8 @@ upgrade_docker_engine() {
 # container on the machine -- not only ours.
 ensure_working_engine() {
     engine_mounts_broken || return 0
-    DOCKER_BROKEN=1
+    blocked "Docker Engine $engine_version cannot mount the simulator's viewer assets.
+Upgrade it to 29.1.4 or newer."
     warn "Docker Engine $engine_version cannot mount the simulator's viewer assets
 (moby#51687: every \`type: image\` mount fails until 29.1.4)."
 
@@ -823,7 +858,7 @@ ensure_working_engine() {
         warn "Docker Engine is still $engine_version, which cannot mount the viewer assets."
         return 0
     fi
-    DOCKER_BROKEN=0
+    BLOCKED_REASON=""
 }
 
 install_uv() {
@@ -993,11 +1028,11 @@ detect_editor() {
     return 1
 }
 
-report_docker_blocked() {
+report_blocked() {
     printf '\n'
-    say "blocked" "the simulator needs a Docker that can mount images"
+    labelled "blocked" "$YELLOW" "$BLOCKED_REASON"
     printf '\n'
-    printf '  %s%8s%s  fix Docker (above), then:\n\n' "$BOLD" "next" "$NC"
+    printf '  %s%8s%s  when that is done:\n\n' "$BOLD" "next" "$NC"
     printf '  %8s  cd %s\n' "" "$(display_path "$INNATE_DIR")"
     printf '  %8s  ./innate-sim setup\n\n' ""
     note "everything else is installed and the checkout is ready"
@@ -1071,10 +1106,10 @@ main() {
     ensure_render_libs
     clone_repo
 
-    if [ "$DOCKER_BROKEN" -eq 1 ]; then
-        # Everything else is in place; the one thing left needs their Docker
-        # fixed, so stop before the download that Docker cannot use.
-        report_docker_blocked
+    if [ -n "$BLOCKED_REASON" ]; then
+        # Everything else is in place; what is left needs their Docker, so
+        # stop before a download that Docker cannot use.
+        report_blocked
         exit 0
     fi
     run_setup

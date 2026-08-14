@@ -55,6 +55,8 @@ DOCKER_WAIT_S=180
 LOG_FILE="${INNATE_INSTALL_LOG:-$HOME/.innate-install.log}"
 VERBOSE="${INNATE_VERBOSE:-0}"
 LOG_TAIL_ROWS=3
+OWN_COMPOSE_DIR="$HOME/.innate/bin"
+OWN_COMPOSE="$OWN_COMPOSE_DIR/docker-compose"
 # Distinct from any exit status a real command produces.
 NO_GROUP_ROUTE=97
 # Survives sudo's env_reset and sg, which inheritance does not.
@@ -763,10 +765,11 @@ install_compose_from_apt() {
     as_root apt-get install -y -qq --allow-downgrades "docker-compose-plugin=$(apt_compose_2x)"
 }
 
-# The CLI reads ~/.docker/cli-plugins before the system one, so this also wins
-# over the plugin Docker Desktop injects into WSL -- where there is no Docker
-# apt repo to install from, and no package to downgrade.
-install_compose_plugin_binary() {
+# Into a directory we own, NOT ~/.docker/cli-plugins: Docker Desktop manages
+# that one and re-links its own plugins into it, so a binary left there is
+# silently replaced and the fix evaporates. The launcher runs this copy
+# directly (runtime.compose_argv), so nothing has to win a search path.
+install_own_compose() {
     case "$(uname -m)" in
         x86_64 | amd64) compose_arch=x86_64 ;;
         aarch64 | arm64) compose_arch=aarch64 ;;
@@ -777,15 +780,35 @@ install_compose_plugin_binary() {
         Linux) compose_os=linux ;;
         *) return 1 ;;
     esac
-    mkdir -p "$HOME/.docker/cli-plugins"
+    mkdir -p "$OWN_COMPOSE_DIR"
     curl -fsSL "$COMPOSE_2X_URL/$COMPOSE_2X_VERSION/docker-compose-$compose_os-$compose_arch" \
         -o "$TMPDIR_INSTALL/docker-compose"
     chmod +x "$TMPDIR_INSTALL/docker-compose"
-    mv "$TMPDIR_INSTALL/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
+    mv "$TMPDIR_INSTALL/docker-compose" "$OWN_COMPOSE"
+}
+
+# The compose that will actually run: ours when we have installed one, which
+# is what sim/launcher/runtime.py picks too.
+compose_version() {
+    if [ -x "$OWN_COMPOSE" ]; then
+        "$OWN_COMPOSE" version --short 2>/dev/null
+    else
+        docker compose version --short 2>/dev/null
+    fi
 }
 
 compose_major() {
-    docker compose version --short 2>/dev/null | cut -d. -f1
+    compose_version | cut -d. -f1
+}
+
+# Never take the install's word for it: the last attempt reported success for
+# a binary Docker Desktop had already replaced.
+compose_took_effect() {
+    major=$(compose_major)
+    case "$major" in
+        '' | *[!0-9]*) return 1 ;;
+    esac
+    [ "$major" -lt 5 ]
 }
 
 ensure_working_compose() {
@@ -798,12 +821,14 @@ ensure_working_compose() {
     done_msg="Docker Compose 2.x installed ($major.x breaks image mounts)"
     if have apt-get && [ -n "$(apt_compose_2x)" ]; then
         prime_sudo
-        step "compose" "Installing Docker Compose 2.x" "$done_msg" install_compose_from_apt && return 0
+        step "compose" "Installing Docker Compose 2.x" "$done_msg" install_compose_from_apt &&
+            compose_took_effect && return 0
     fi
     # No apt candidate is the normal case under Docker Desktop's WSL
     # integration: Compose comes from Desktop, and no Docker repo is
     # configured inside the distro.
-    step "compose" "Installing Docker Compose 2.x" "$done_msg" install_compose_plugin_binary && return 0
+    step "compose" "Installing Docker Compose 2.x" "$done_msg" install_own_compose &&
+        compose_took_effect && return 0
 
     warn "Could not install a working Docker Compose, and $major.x cannot mount the sim's
 viewer assets. Install a 2.x Compose plugin by hand before \`innate-sim up\`:

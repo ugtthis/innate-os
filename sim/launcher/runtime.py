@@ -464,7 +464,7 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
     # cryptic bare-`docker` usage error instead of a clear diagnosis.
     try:
         compose = subprocess.run(
-            ["docker", "compose", "version"],
+            [*compose_argv(), "version"],
             text=True,
             stdin=subprocess.DEVNULL,
             capture_output=True,
@@ -473,7 +473,7 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
         )
     except subprocess.TimeoutExpired:
         raise StackError(
-            f"Docker did not answer `docker compose version` within {DOCKER_PROBE_TIMEOUT_S:.0f}s.\n"
+            f"Docker Compose did not answer `version` within {DOCKER_PROBE_TIMEOUT_S:.0f}s.\n"
             f"The docker daemon looks stuck. Restart Docker, then rerun `{command_hint}`."
         ) from None
     if compose.returncode != 0:
@@ -1162,11 +1162,25 @@ def viewer_bundle_built_locally() -> bool:
         return False
 
 
+# Compose we installed ourselves, for hosts whose own is one that cannot mount
+# images. NOT ~/.docker/cli-plugins: Docker Desktop manages that directory and
+# re-links its own plugins into it, so a binary left there is replaced without
+# warning. A path we own is a path that stays put.
+OWN_COMPOSE = Path.home() / ".innate" / "bin" / "docker-compose"
+
+
+def compose_argv() -> list[str]:
+    """The compose this launcher actually runs."""
+    if OWN_COMPOSE.is_file() and os.access(OWN_COMPOSE, os.X_OK):
+        return [str(OWN_COMPOSE)]
+    return ["docker", "compose"]
+
+
 def docker_compose_cmd(*parts: str) -> list[str]:
     # One compose file for every invocation: dist-lib is always an image mount,
     # only WHICH image varies (see viewer_image_ref), so there is no overlay to
     # apply on `up` and forget on every later subcommand.
-    return ["docker", "compose", "-f", "sim/docker-compose.dev.yml", *parts]
+    return [*compose_argv(), "-f", "sim/docker-compose.dev.yml", *parts]
 
 
 def os_compose_exec_cmd(*parts: str) -> list[str]:

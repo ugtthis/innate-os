@@ -347,7 +347,31 @@ def _docker_group_argv(command: str) -> list[str] | None:
     ]
 
 
+# Docker Desktop 4.x can install its CLI into ~/.docker/bin rather than
+# /usr/local/bin, and teaches the shell about it by editing ~/.zprofile --
+# which bash never reads, and no non-login shell reads either. The binary is
+# there; only the search is wrong.
+DOCKER_CLI_DIRS = (
+    Path.home() / ".docker" / "bin",
+    Path("/usr/local/bin"),
+    Path("/Applications/Docker.app/Contents/Resources/bin"),
+)
+
+
+def _find_docker_cli() -> None:
+    """Put Docker's own CLI on PATH for this process, if PATH lacks it."""
+    if shutil.which("docker"):
+        return
+    for directory in DOCKER_CLI_DIRS:
+        candidate = directory / "docker"
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            os.environ["PATH"] = f"{directory}{os.pathsep}{os.environ.get('PATH', '')}"
+            log(f"Using the docker command from {directory} (your shell's PATH does not have it).")
+            return
+
+
 def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: bool = True) -> None:
+    _find_docker_cli()
     """Check Docker (and, unless opted out, the Compose v2 plugin).
 
     `require_compose=False` is for commands that only touch an already-running

@@ -542,6 +542,7 @@ uv_installed() {
 }
 
 build_plan() {
+    find_docker_cli || true
     have git || plan_add "Install git (with your package manager)" 1
     have docker || {
         if [ "$PLATFORM" = "macos" ]; then
@@ -676,11 +677,32 @@ docker_group_granted_here() { [ -f "$TMPDIR_INSTALL/docker-group-granted" ]; }
 # accept, a privileged helper to authorise and a first launch to sit through.
 # Homebrew can fetch it, but not finish it -- so this points at the download
 # and gets out of the way rather than automating the half that can be.
+# Docker Desktop 4.x can install its CLI into ~/.docker/bin instead of
+# /usr/local/bin, and teaches PATH about it by editing ~/.zprofile -- which a
+# bash shell never reads. The binary is right there; only the search is wrong.
+DOCKER_CLI_DIRS="$HOME/.docker/bin /usr/local/bin /Applications/Docker.app/Contents/Resources/bin"
+
+find_docker_cli() {
+    have docker && return 0
+    for docker_dir in $DOCKER_CLI_DIRS; do
+        if [ -x "$docker_dir/docker" ]; then
+            PATH="$docker_dir:$PATH"
+            export PATH
+            note "found the docker command in $docker_dir"
+            return 0
+        fi
+    done
+    return 1
+}
+
 require_docker_desktop() {
     if [ -d "/Applications/Docker.app" ]; then
-        blocked "Docker Desktop is installed, but its command-line tools are not on PATH.
-Open Docker Desktop once -- it installs them and asks you to accept its terms --
-then run this installer again."
+        blocked "Docker Desktop is installed, but its docker command is nowhere this
+installer can find it -- not on PATH, and not in ~/.docker/bin, /usr/local/bin or
+the app itself.
+Open Docker Desktop, then look at Settings -> Advanced: it can install the
+command-line tools either system-wide or for your user only. Once 'docker version'
+answers in a terminal, run this installer again."
     else
         blocked "Docker Desktop is not installed, and macOS needs it: containers are Linux
 processes, so they run inside the VM it provides.
@@ -691,6 +713,7 @@ Install it, open it once and accept its terms, then run this installer again."
 }
 
 ensure_docker() {
+    find_docker_cli || true
     if ! have docker; then
         if [ "$PLATFORM" = "macos" ]; then
             require_docker_desktop || return 0

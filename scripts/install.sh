@@ -543,7 +543,10 @@ report_next_steps() {
     printf '\n'
     say "ready" "the simulator is installed"
     printf '\n'
-    printf '  %s%8s%s  cd %s && ./innate-sim up\n' "$BOLD" "start" "$NC" "$(basename "$INNATE_DIR")"
+    # The launcher resolves its own repo root, so this works from any
+    # directory -- no `cd` for the user to remember, and none this script
+    # could perform for them anyway (a child cannot move its parent's shell).
+    printf '  %s%8s%s  %s/innate-sim up\n' "$BOLD" "start" "$NC" "$INNATE_DIR"
     printf '  %s%8s%s  https://localhost %s(accept the self-signed certificate)%s\n' "$BOLD" "open" "$NC" "$DIM" "$NC"
     printf '  %s%8s%s  https://discord.gg/innate\n' "$BOLD" "help" "$NC"
     printf '\n'
@@ -552,6 +555,21 @@ report_next_steps() {
         note "innate-sim reruns itself under sg until your next login session."
         printf '\n'
     fi
+}
+
+# Offer to skip the last command too. `exec` hands the terminal to the
+# launcher: its dashboard owns the screen from here, and the shell is gone
+# rather than waiting behind it.
+offer_to_start() {
+    [ "$INTERACTIVE" -eq 1 ] || return 0
+    confirm "  Start the simulator now?" || return 0
+    printf '\n'
+    if [ "$NEED_RELOGIN" -eq 1 ] && have sg; then
+        exec 0<&3
+        exec sg docker -c "'$INNATE_DIR/innate-sim' up"
+    fi
+    exec 0<&3
+    exec "$INNATE_DIR/innate-sim" up
 }
 
 main() {
@@ -575,6 +593,7 @@ main() {
 
     run_setup
     report_next_steps
+    offer_to_start
 }
 
 main "$@"

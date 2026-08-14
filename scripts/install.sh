@@ -97,14 +97,34 @@ esac
 # The how goes to LOG_FILE, which every failure points at.
 say() { printf '  %s%8s%s  %s\n' "$CYAN" "$1" "$NC" "$2"; }
 note() { printf '  %s%8s  %s%s\n' "$DIM" "" "$1" "$NC"; }
-warn() { printf '  %s%8s%s  %s\n' "$YELLOW" "warning" "$NC" "$*" >&2; }
+
+# The label, then the message with every later line held at the same indent --
+# an explanation that falls back to the margin stops looking like one message.
+labelled() {
+    printf '%s\n' "$3" | {
+        first=1
+        while IFS= read -r labelled_line; do
+            if [ "$first" -eq 1 ]; then
+                printf '  %s%8s%s  %s\n' "$2" "$1" "$NC" "$labelled_line"
+                first=0
+            elif [ -n "$labelled_line" ]; then
+                printf '  %8s  %s\n' "" "$labelled_line"
+            else
+                printf '\n' # a blank line stays blank, not twelve spaces
+            fi
+        done
+    }
+}
+
+warn() { labelled "warning" "$YELLOW" "$*" >&2; }
 cancel() {
-    printf '  %s%8s%s  %s\n' "$YELLOW" "aborted" "$NC" "$*"
+    labelled "aborted" "$YELLOW" "$*"
     exit 0
 }
 
 die() {
-    printf '\r\033[K  %s%8s%s  %s\n' "$RED" "failed" "$NC" "$*" >&2
+    printf '\r\033[K'
+    labelled "failed" "$RED" "$*" >&2
     if [ -s "$LOG_FILE" ]; then
         printf '  %s%8s  full log: %s%s\n' "$DIM" "" "$LOG_FILE" "$NC" >&2
     fi
@@ -391,7 +411,13 @@ check_install_dir() {
     # ownership the launcher sets on workspace/ does not survive it.
     case "$PLATFORM:$INNATE_DIR" in
         wsl:/mnt/*)
-            die "$INNATE_DIR is on the Windows filesystem, which is far too slow for the simulator. Install into the WSL filesystem instead (the default, \$HOME/innate-os)."
+            die "This folder is on the Windows drive, where the simulator runs far too
+slowly to use. Your Linux home folder is the place for it.
+
+Run these two commands:
+
+  cd ~
+  curl -fsSL https://link.innate.bot/sim | sh"
             ;;
     esac
 

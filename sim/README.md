@@ -109,6 +109,11 @@ then open the Ubuntu terminal and follow the **Linux** steps above. WSLg
 (included in current WSL) gives the sim GPU-accelerated rendering
 automatically.
 
+Install into your Linux home folder — run `cd ~` first if the prompt shows a
+path starting with `/mnt/`. That prefix is the Windows drive seen from Linux,
+and every file the container reads there crosses a bridge slow enough to turn
+a two-minute start into a coffee break.
+
 One caution: use exactly **one** Docker — either Docker Desktop (with WSL
 integration enabled) or `docker.io` installed inside WSL. Having both
 installed makes the `docker` command hang in confusing ways.

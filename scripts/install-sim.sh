@@ -70,6 +70,7 @@ DISK_TARGET=""
 SUDO_PRIMED=0
 STEP_ACTIVE=0
 step_pid=""
+DOCKER_BROKEN=0
 
 # Package managers ask questions no unattended install can answer, and
 # needrestart prints a service-restart audit nobody asked for.
@@ -367,19 +368,24 @@ draw_confirm() {
 
 # Left/right between Yes and No, like the menus in the launcher. Falls back to
 # typing when the terminal cannot be put in raw mode.
+# confirm <question> [no]: the second argument starts the selection on No,
+# for questions whose yes costs something.
 confirm() {
     [ "$INTERACTIVE" -eq 1 ] || return 0
     confirm_question=$1
+    confirm_default=${2:-yes}
     if ! stty_saved=$(stty -g <&3 2>/dev/null); then
-        printf '  %s%s [Y/n]: %s' "$YELLOW" "$confirm_question" "$NC"
+        printf '  %s%s [%s]: %s' "$YELLOW" "$confirm_question" \
+            "$([ "$confirm_default" = "no" ] && printf 'y/N' || printf 'Y/n')" "$NC"
         read -r reply <&3 || reply=""
         case "$reply" in
-            "" | y | Y | yes | YES) return 0 ;;
+            y | Y | yes | YES) return 0 ;;
+            "") [ "$confirm_default" != "no" ] ;;
             *) return 1 ;;
         esac
     fi
 
-    confirm_yes=1
+    if [ "$confirm_default" = "no" ]; then confirm_yes=0; else confirm_yes=1; fi
     stty raw -echo <&3
     hide_cursor
     while :; do
@@ -689,6 +695,86 @@ viewer assets. Install a 2.x Compose plugin by hand before \`innate-sim up\`:
   https://github.com/docker/compose/releases"
 }
 
+# Docker's own image mounts are broken from 29.0.0 until 29.1.4 (moby#51687):
+# every `type: image` mount fails with 'file name too long', so the container
+# cannot be created. Same window the launcher refuses `up` and `setup` on.
+engine_mounts_broken() {
+    engine_version=$(docker info --format '{{.Server.Version}}' 2>/dev/null) || return 1
+    engine_major=${engine_version%%.*}
+    engine_rest=${engine_version#*.}
+    engine_minor=${engine_rest%%.*}
+    engine_patch=${engine_rest#*.}
+    engine_patch=${engine_patch%%[!0-9]*}
+    case "$engine_major:$engine_minor:$engine_patch" in
+        *[!0-9:]* | *::*) return 1 ;;
+    esac
+    [ "$engine_major" -eq 29 ] || return 1
+    [ "$engine_minor" -eq 0 ] && return 0
+    if [ "$engine_minor" -eq 1 ] && [ "$engine_patch" -lt 4 ]; then
+        return 0
+    fi
+    return 1
+}
+
+# An NVIDIA runtime means this Docker is load-bearing for something else --
+# on a Jetson it is pinned against nvidia-container-toolkit, and replacing it
+# from Docker's repo can take GPU containers down with it. Not ours to touch.
+docker_belongs_to_something_else() {
+    docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -qi nvidia
+}
+
+running_containers() {
+    docker ps -q 2>/dev/null | wc -l | tr -d ' '
+}
+
+upgrade_docker_engine() {
+    curl -fsSL "$DOCKER_INSTALL_URL" -o "$TMPDIR_INSTALL/get-docker.sh"
+    as_root sh "$TMPDIR_INSTALL/get-docker.sh"
+}
+
+# Offered, never assumed: upgrading restarts the daemon, which stops every
+# container on the machine -- not only ours.
+ensure_working_engine() {
+    engine_mounts_broken || return 0
+    DOCKER_BROKEN=1
+    warn "Docker Engine $engine_version cannot mount the simulator's viewer assets
+(moby#51687: every \`type: image\` mount fails until 29.1.4)."
+
+    if [ "$PLATFORM" = "macos" ]; then
+        note "update Docker Desktop -- its update ships a fixed engine"
+        return 0
+    fi
+    if docker_belongs_to_something_else; then
+        note "this Docker has an NVIDIA runtime configured, so it is left alone"
+        note "upgrade it the way it was installed, then rerun"
+        return 0
+    fi
+
+    printf '\n'
+    note "upgrading to the current release from https://get.docker.com fixes it"
+    running=$(running_containers)
+    if [ "$running" -gt 0 ]; then
+        note "this restarts the Docker daemon and stops $running running container(s)"
+    else
+        note "this restarts the Docker daemon"
+    fi
+    printf '\n'
+    if ! confirm "  Upgrade Docker Engine?" no; then
+        return 0
+    fi
+    printf '\n'
+    prime_sudo
+    if ! step "docker" "Upgrading Docker Engine" "Docker Engine upgraded" upgrade_docker_engine; then
+        warn "The Docker upgrade did not finish; see $LOG_FILE."
+        return 0
+    fi
+    if engine_mounts_broken; then
+        warn "Docker Engine is still $engine_version, which cannot mount the viewer assets."
+        return 0
+    fi
+    DOCKER_BROKEN=0
+}
+
 install_uv() {
     curl -LsSf "$UV_INSTALL_URL" -o "$TMPDIR_INSTALL/uv-install.sh"
     sh "$TMPDIR_INSTALL/uv-install.sh"
@@ -847,6 +933,17 @@ detect_editor() {
     return 1
 }
 
+report_docker_blocked() {
+    printf '\n'
+    say "blocked" "the simulator needs a Docker that can mount images"
+    printf '\n'
+    printf '  %s%8s%s  fix Docker (above), then:\n\n' "$BOLD" "next" "$NC"
+    printf '  %8s  cd %s\n' "" "$INNATE_DIR"
+    printf '  %8s  ./innate-sim setup\n\n' ""
+    note "everything else is installed and the checkout is ready"
+    printf '\n'
+}
+
 report_next_steps() {
     printf '\n'
     say "ready" "the simulator is installed"
@@ -909,10 +1006,17 @@ main() {
 
     ensure_git
     ensure_docker
+    ensure_working_engine
     ensure_uv
     ensure_render_libs
     clone_repo
 
+    if [ "$DOCKER_BROKEN" -eq 1 ]; then
+        # Everything else is in place; the one thing left needs their Docker
+        # fixed, so stop before the download that Docker cannot use.
+        report_docker_blocked
+        exit 0
+    fi
     run_setup
     report_next_steps
     offer_to_start

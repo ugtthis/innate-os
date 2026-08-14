@@ -817,12 +817,17 @@ def render_status(
             print(marquee_line)
             used_lines += 1
 
-    # The web app is what the user is here to open; everything else on this
-    # screen is for when something has gone wrong. Spend the whitespace.
+    # The two places someone actually goes while the sim runs: the browser,
+    # and the checkout they write skills in. Everything else on this screen is
+    # for when something has gone wrong, so spend the whitespace here.
     print()
     print_dashboard_line(f"    {GREEN}{BOLD}▸  https://localhost{NC}   {DIM}the robot's web app{NC}", term_width)
+    print_dashboard_line(
+        f"    {CYAN}{BOLD}✎  {config['os_repo']}{NC}   {DIM}skills and agents live in workspace/{NC}",
+        term_width,
+    )
     print()
-    used_lines += 3
+    used_lines += 4
     print_dashboard_line(
         "   ".join(
             [

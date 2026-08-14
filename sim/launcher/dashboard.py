@@ -847,9 +847,14 @@ def render_status(
     # and the checkout they write skills in. Everything else on this screen is
     # for when something has gone wrong, so spend the whitespace here.
     print()
-    print_dashboard_line(f"    {GREEN}{BOLD}▸  https://localhost{NC}   {DIM}the robot's web app{NC}", term_width)
+    web_app, checkout = "https://localhost", str(config["os_repo"])
+    column = max(len(web_app), len(checkout))
     print_dashboard_line(
-        f"    {CYAN}{BOLD}✎  {config['os_repo']}{NC}   {DIM}skills and agents live in workspace/{NC}",
+        f"    {GREEN}{BOLD}▸  {web_app:<{column}}{NC}   {DIM}simulator: run in your browser{NC}",
+        term_width,
+    )
+    print_dashboard_line(
+        f"    {CYAN}{BOLD}✎  {checkout:<{column}}{NC}   {DIM}code: skills and agents live in workspace/{NC}",
         term_width,
     )
     print()

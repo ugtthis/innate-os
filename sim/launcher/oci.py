@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
+import sys
 import tarfile
 import time
 from pathlib import Path
@@ -27,6 +28,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from config import StackError, log
+from dashboard import DIM, NC, format_bytes, render_progress_bar
 
 REGISTRY = "ghcr.io"
 _TIMEOUT_S = 600
@@ -195,6 +197,17 @@ def manifest_for_image(image: str) -> dict:
         raise OciError(f"{image} -> malformed manifest response: {exc}") from exc
 
 
+def _report_download(label: str, done: int, total: int, *, live: bool) -> None:
+    """One progress line: a bar in place on a terminal, an occasional log line
+    otherwise (silence reads as a hang on a cold ~85 MB download)."""
+    if not live:
+        log(f"Downloading {label}... {format_bytes(done)}" + (f" of {format_bytes(total)}" if total else ""))
+        return
+    bar = render_progress_bar(done / total if total else 0.0)
+    size = f"{format_bytes(done)} / {format_bytes(total)}" if total else format_bytes(done)
+    print(f"\r\033[K  {bar} {size}  {DIM}{label}{NC}", end="", flush=True)
+
+
 def fetch_layer(repo: str, digest: str, dest, token: str, *, label: str = "layer") -> None:
     """Stream one layer blob to `dest` (an open binary file), verifying `digest`.
 
@@ -207,18 +220,22 @@ def fetch_layer(repo: str, digest: str, dest, token: str, *, label: str = "layer
     url = f"https://{REGISTRY}/v2/{repo}/blobs/{digest}"
     sha = hashlib.sha256()
     headers = {"Authorization": f"Bearer {token}"}
+    live = sys.stdout.isatty()
     try:
         with urlopen(Request(url, headers=headers), timeout=_TIMEOUT_S) as resp:
-            total_mb = int(resp.headers.get("Content-Length") or 0) >> 20
+            total = int(resp.headers.get("Content-Length") or 0)
             done = 0
-            next_report = time.monotonic() + 5.0
+            next_report = time.monotonic()
             while chunk := resp.read(1 << 20):
                 sha.update(chunk)
                 dest.write(chunk)
                 done += len(chunk)
                 if time.monotonic() >= next_report:
-                    log(f"Downloading {label}... {done >> 20} MB" + (f" of {total_mb} MB" if total_mb else ""))
-                    next_report = time.monotonic() + 5.0
+                    _report_download(label, done, total, live=live)
+                    next_report = time.monotonic() + (0.5 if live else 5.0)
+            if live:
+                _report_download(label, done, total or done, live=True)
+                print()
     except HTTPError as exc:
         raise OciError(f"{url} -> HTTP {exc.code} {exc.reason}", status=exc.code) from exc
     except (URLError, OSError) as exc:

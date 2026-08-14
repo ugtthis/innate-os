@@ -17,6 +17,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -64,7 +65,7 @@ from config import (
     viewer_tree_dirty,
     warn,
 )
-from dashboard import BOLD, GREEN, NC, RED, USE_COLOR
+from dashboard import BOLD, DIM, GREEN, NC, RED, USE_COLOR, format_bytes, render_progress_bar
 
 DOCKER_INSTALL_URL = "https://docs.docker.com/get-started/get-docker/"
 COMPOSE_INSTALL_URL = "https://docs.docker.com/compose/install/linux/"
@@ -111,6 +112,77 @@ def latest_log_line(path: Path) -> str | None:
     return None
 
 
+_DOCKER_LAYER_RE = re.compile(r"^([0-9a-f]{12}): (.+)$")
+_DOCKER_SIZE_RE = re.compile(r"([\d.]+)([kMG]?B)/([\d.]+)([kMG]?B)")
+_BYTE_UNITS = {"B": 1, "kB": 1000, "MB": 1000**2, "GB": 1000**3}
+
+
+_DOWNLOADED = ("Download complete", "Verifying Checksum", "Extracting", "Pull complete", "Already exists")
+_PULLED = ("Pull complete", "Already exists")
+
+
+def _parse_size(status: str) -> tuple[float, float]:
+    size = _DOCKER_SIZE_RE.search(status)
+    if not size:
+        return 0.0, 0.0
+    return (
+        float(size.group(1)) * _BYTE_UNITS[size.group(2)],
+        float(size.group(3)) * _BYTE_UNITS[size.group(4)],
+    )
+
+
+def _layer_share(status: str, ratio: float) -> float:
+    """How much of one layer's work is done: half for the download, half for
+    the extraction. Progress per layer only ever grows, unlike a byte
+    percentage, whose denominator jumps every time a queued layer starts."""
+    if status.startswith(_PULLED):
+        return 1.0
+    if status.startswith("Extracting"):
+        return 0.5 + 0.5 * ratio
+    if status.startswith(("Download complete", "Verifying Checksum")):
+        return 0.5
+    if status.startswith("Downloading"):
+        return 0.5 * ratio
+    return 0.0
+
+
+def docker_pull_progress(output: str) -> str | None:
+    """One aggregate progress line for a `docker pull`, or None when the output
+    is not one (a compose or build log, or nothing yet).
+
+    Docker's own per-layer chatter is what users read as confusing: a dozen
+    interleaved ids, each announcing "Download complete" while the pull plainly
+    continues.
+    """
+    layers: dict[str, dict[str, float | str]] = {}
+    for line in output.splitlines():
+        match = _DOCKER_LAYER_RE.match(line.strip())
+        if not match:
+            continue
+        status = match.group(2)
+        layer = layers.setdefault(match.group(1), {"status": "", "ratio": 0.0, "done": 0.0, "total": 0.0})
+        layer["status"] = status
+        done, total = _parse_size(status)
+        layer["ratio"] = done / total if total else 0.0
+        # Only download lines carry download bytes -- an Extracting line
+        # reports the layer's UNCOMPRESSED size, which would inflate the total.
+        if status.startswith("Downloading"):
+            layer["done"], layer["total"] = done, total
+        elif status.startswith(_DOWNLOADED):
+            layer["done"] = layer["total"]
+    if not layers:
+        return None
+
+    progress = sum(_layer_share(str(layer["status"]), float(layer["ratio"])) for layer in layers.values())
+    downloaded = sum(float(layer["done"]) for layer in layers.values())
+    complete = sum(1 for layer in layers.values() if str(layer["status"]).startswith(_PULLED))
+    fraction = progress / len(layers)
+    return (
+        f"{render_progress_bar(fraction)} {fraction * 100:3.0f}%  "
+        f"{format_bytes(downloaded)}  {DIM}{complete}/{len(layers)} layers{NC}"
+    )
+
+
 def run_logged_with_heartbeat(
     cmd: list[str],
     *,
@@ -121,6 +193,7 @@ def run_logged_with_heartbeat(
     progress_message: str,
     heartbeat_seconds: float = 10.0,
     include_recent_log_on_failure: bool = True,
+    progress_formatter: Callable[[str], str | None] | None = None,
 ) -> None:
     ensure_state_dir()
     # Heartbeats must describe THIS command: reading the whole shared log
@@ -128,6 +201,12 @@ def run_logged_with_heartbeat(
     # 'unauthorized' haunted the subsequent build's heartbeats).
     log_offset = log_path.stat().st_size if log_path.exists() else 0
     started = time.monotonic()
+    # A bar redrawn in place needs to be refreshed often to look like one; a
+    # log file gets the slow cadence, so a CI transcript is not a flipbook.
+    live = progress_formatter is not None and sys.stdout.isatty()
+    if live:
+        heartbeat_seconds = 0.5
+    drew_progress = False
     with log_path.open("a", encoding="utf-8") as log_file:
         proc = subprocess.Popen(
             cmd,
@@ -145,18 +224,27 @@ def run_logged_with_heartbeat(
                 break
             now = time.monotonic()
             if now >= next_heartbeat:
-                latest = ""
+                appended = latest = ""
                 with contextlib.suppress(OSError):
                     appended = log_path.read_text(errors="replace")[log_offset:]
                     latest = next((line.strip() for line in reversed(appended.splitlines()) if line.strip()), "")
                 elapsed = int(now - started)
                 stamp = f"{elapsed // 60}m{elapsed % 60:02d}s" if elapsed >= 60 else f"{elapsed}s"
-                if latest:
+                progress = progress_formatter(appended) if progress_formatter and appended else None
+                if progress and live:
+                    print(f"\r\033[K  {progress}  {DIM}{stamp}{NC}", end="", flush=True)
+                    drew_progress = True
+                elif progress:
+                    log(f"{progress_message} ({stamp}) {progress}")
+                elif latest:
                     log(f"{progress_message} ({stamp}) Latest: {latest}")
                 else:
                     log(f"{progress_message} ({stamp}, no output yet)")
                 next_heartbeat = now + heartbeat_seconds
-            time.sleep(0.5)
+            time.sleep(0.25 if live else 0.5)
+
+    if drew_progress:
+        print()  # close the line the bar was redrawing
 
     if return_code != 0:
         if not include_recent_log_on_failure:
@@ -513,6 +601,7 @@ def ensure_os_image_available(
         failure_message=(f"Could not pull the prebuilt Innate OS image: {shorten_docker_image_ref(image)}"),
         progress_message="Docker is still pulling the Innate OS image.",
         include_recent_log_on_failure=include_pull_log_on_failure,
+        progress_formatter=docker_pull_progress,
     )
 
 

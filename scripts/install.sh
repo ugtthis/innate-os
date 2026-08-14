@@ -36,14 +36,20 @@ PLAN=""
 
 if [ -t 1 ]; then
     BOLD=$(printf '\033[1m')
+    DIM=$(printf '\033[2m')
     RED=$(printf '\033[31m')
     GREEN=$(printf '\033[32m')
     YELLOW=$(printf '\033[33m')
     CYAN=$(printf '\033[36m')
     NC=$(printf '\033[0m')
 else
-    BOLD="" RED="" GREEN="" YELLOW="" CYAN="" NC=""
+    BOLD="" DIM="" RED="" GREEN="" YELLOW="" CYAN="" NC=""
 fi
+
+case "${COLORTERM:-}" in
+    truecolor | 24bit) TRUECOLOR=1 ;;
+    *) TRUECOLOR=0 ;;
+esac
 
 log() { printf '%s==>%s %s\n' "$CYAN" "$NC" "$*"; }
 ok() { printf '%s  ok%s %s\n' "$GREEN" "$NC" "$*"; }
@@ -55,6 +61,8 @@ die() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Invoked by the trap in main, which shellcheck does not trace
+# shellcheck disable=SC2329
 cleanup() { [ -n "$TMPDIR_INSTALL" ] && rm -rf "$TMPDIR_INSTALL"; }
 
 as_root() {
@@ -66,21 +74,34 @@ as_root() {
     fi
 }
 
-# Piped into sh, stdin is the script itself -- reattach the terminal so this
-# and `innate-sim setup` can both ask questions. Without one (CI, a hook), the
-# installer proceeds with defaults and setup skips the key prompt on its own.
+# The terminal on fd 3, NOT on stdin: piped into sh, stdin is the script
+# itself, which the shell is still reading. Redirecting it makes the shell read
+# the rest of the install from the keyboard -- it hangs at the end instead of
+# exiting. Without a terminal at all (CI, a hook), the installer proceeds with
+# defaults and setup skips the key prompt on its own.
 attach_terminal() {
-    if [ -e /dev/tty ] && exec </dev/tty 2>/dev/null; then
+    # Redirections apply left to right, so `exec 3<... 2>/dev/null` still
+    # reports its own failure; the group suppresses it.
+    if [ -e /dev/tty ] && { exec 3</dev/tty; } 2>/dev/null; then
         INTERACTIVE=1
     else
         INTERACTIVE=0
     fi
 }
 
+# Anything that asks the user something needs the terminal as ITS stdin.
+with_tty() {
+    if [ "$INTERACTIVE" -eq 1 ]; then
+        "$@" <&3
+    else
+        "$@"
+    fi
+}
+
 confirm() {
     [ "$INTERACTIVE" -eq 1 ] || return 0
     printf '%s%s [Y/n]: %s' "$YELLOW" "$1" "$NC"
-    read -r reply || reply=""
+    read -r reply <&3 || reply=""
     case "$reply" in
         "" | y | Y | yes | YES) return 0 ;;
         *) return 1 ;;
@@ -304,7 +325,7 @@ run_setup() {
     setup_failed="Setup did not finish (see above). Fix the problem, then rerun: cd $INNATE_DIR && ./innate-sim setup"
 
     if [ "$NEED_RELOGIN" -eq 0 ]; then
-        (cd "$INNATE_DIR" && ./innate-sim setup) || die "$setup_failed"
+        with_tty sh -c "cd '$INNATE_DIR' && ./innate-sim setup" || die "$setup_failed"
         return 0
     fi
 
@@ -312,7 +333,7 @@ run_setup() {
     # reach the socket. `sg` runs one command under a group you already belong
     # to -- enough to finish the install now instead of after a logout.
     if have sg; then
-        sg docker -c "cd '$INNATE_DIR' && ./innate-sim setup" || die "$setup_failed"
+        with_tty sg docker -c "cd '$INNATE_DIR' && ./innate-sim setup" || die "$setup_failed"
         return 0
     fi
     report_relogin
@@ -326,17 +347,53 @@ report_relogin() {
     printf '  cd %s && ./innate-sim setup\n\n' "$INNATE_DIR"
 }
 
-report_next_steps() {
-    printf '\n%sThe Innate simulator is ready.%s\n\n' "$BOLD" "$NC"
-    printf '  cd %s\n' "$INNATE_DIR"
-    printf '  ./innate-sim up\n\n'
-    if [ "$NEED_RELOGIN" -eq 1 ]; then
-        printf 'Docker was installed for you just now, so this shell is not in the docker\n'
-        printf 'group yet -- innate-sim reruns itself under sg to cover that. Your next\n'
-        printf 'login session gets the group properly and needs nothing.\n\n'
+divider() { printf '%s%s%s\n' "$DIM" "────────────────────────────────────────────────────────" "$NC"; }
+
+# The launcher's wordmark (dashboard.ASCII_BANNER) and its green-to-gold
+# gradient, so the install ends in the same skin the dashboard opens in.
+logo_color() {
+    [ -n "$NC" ] || return 0
+    if [ "$TRUECOLOR" -eq 0 ]; then
+        printf '\033[36m'
+        return 0
     fi
-    printf 'Then open %shttps://localhost%s and accept the self-signed certificate.\n' "$BOLD" "$NC"
-    printf 'Questions, or something went wrong? https://discord.gg/innate\n'
+    case "$1" in
+        1) printf '\033[38;2;119;202;155m' ;;
+        2) printf '\033[38;2;140;199;140m' ;;
+        3) printf '\033[38;2;164;196;126m' ;;
+        4) printf '\033[38;2;185;194;115m' ;;
+        *) printf '\033[38;2;203;192;108m' ;;
+    esac
+}
+
+print_logo() {
+    i=0
+    while IFS= read -r line; do
+        i=$((i + 1))
+        printf '%s%s%s%s\n' "$(logo_color "$i")" "$BOLD" "$line" "$NC"
+    done <<'EOF'
+ ___ _   _ _   _    _  _____ _____
+|_ _| \ | | \ | |  / \|_   _| ____|
+ | ||  \| |  \| | / _ \ | | |  _|
+ | || |\  | |\  |/ ___ \| | | |___
+|___|_| \_|_| \_/_/   \_\_| |_____|
+EOF
+}
+
+report_next_steps() {
+    printf '\n'
+    divider
+    print_logo
+    printf '%ssimulator ready // %s%s\n' "$DIM" "$INNATE_DIR" "$NC"
+    divider
+    printf '\n  %sStart it%s    cd %s && ./innate-sim up\n' "$BOLD" "$NC" "$(basename "$INNATE_DIR")"
+    printf '  %sThen open%s   https://localhost %s(accept the self-signed certificate)%s\n' "$BOLD" "$NC" "$DIM" "$NC"
+    printf '  %sStuck?%s      https://discord.gg/innate\n\n' "$BOLD" "$NC"
+    if [ "$NEED_RELOGIN" -eq 1 ]; then
+        printf '%sDocker was installed just now, so this shell is not in the docker group\n' "$DIM"
+        printf 'yet -- innate-sim reruns itself under sg to cover it. Your next login\n'
+        printf 'session gets the group properly and needs nothing.%s\n\n' "$NC"
+    fi
 }
 
 main() {
@@ -361,3 +418,6 @@ main() {
 }
 
 main "$@"
+# Explicit, so the shell stops here rather than reading whatever else is on
+# stdin -- the pipe this script arrived through.
+exit $?

@@ -162,6 +162,17 @@ class DashboardRuntime:
             self.log_rev += 1
 
 
+def render_progress_bar(fraction: float, width: int = 22) -> str:
+    filled = round(max(0.0, min(1.0, fraction)) * width)
+    return f"{GREEN}{'█' * filled}{DIM}{'░' * (width - filled)}{NC}"
+
+
+def format_bytes(count: float) -> str:
+    if count >= 1 << 30:
+        return f"{count / (1 << 30):.1f} GB"
+    return f"{count / (1 << 20):.0f} MB"
+
+
 def divider() -> None:
     print(f"{DIM}{'━' * 72}{NC}")
 

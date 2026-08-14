@@ -300,18 +300,37 @@ def reexec_under_docker_group() -> None:
     """
     if os.environ.get(DOCKER_GROUP_REEXEC_ENV) or not _docker_group_is_stale():
         return
-    if shutil.which("sg") is None:
-        return
     command = shlex.join([sys.executable, str(Path(sys.argv[0]).resolve()), *sys.argv[1:]])
-    log(f"Your user is in the {DOCKER_GROUP} group, but this shell predates it -- rerunning under `sg`.")
+    argv = _docker_group_argv(command)
+    if argv is None:
+        return
+    log(f"Your user is in the {DOCKER_GROUP} group, but this shell predates it -- rerunning with it applied.")
     log("A new login session will not need this.")
-    # The guard rides along in the environment: an sg that somehow does not
+    # The guard rides along in the environment: a re-exec that somehow does not
     # confer the group must fail once, not fork forever.
     os.environ[DOCKER_GROUP_REEXEC_ENV] = "1"
     try:
-        os.execvp("sg", ["sg", DOCKER_GROUP, "-c", command])
+        os.execvp(argv[0], argv)
     except OSError:
         os.environ.pop(DOCKER_GROUP_REEXEC_ENV, None)
+
+
+def _docker_group_argv(command: str) -> list[str] | None:
+    """How to re-run `command` with the docker group applied, or None.
+
+    `sg` is the direct route. Minimized WSL images ship neither it nor newgrp
+    (both live in the `passwd` package), so fall back to sudo, which re-reads
+    the target user's groups from the database. Only passwordless sudo: a
+    prompt nobody asked for, in the middle of `up`, is worse than the message
+    this would have replaced.
+    """
+    if shutil.which("sg") is not None:
+        return ["sg", DOCKER_GROUP, "-c", command]
+    if shutil.which("sudo") is None or not command_succeeds(
+        ["sudo", "-n", "true"], cwd=Path.cwd(), env=os.environ.copy()
+    ):
+        return None
+    return ["sudo", "-n", "-u", pwd.getpwuid(os.getuid()).pw_name, "--", "sh", "-c", command]
 
 
 def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: bool = True) -> None:

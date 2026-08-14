@@ -725,6 +725,30 @@ clone_repo() {
     note "$REF at $(git -C "$INNATE_DIR" rev-parse --short HEAD)"
 }
 
+# Run a command with the docker group applied, without a new login session.
+# `sg` is the direct way; `sudo -u you` is the same effect by another route,
+# because sudo re-reads the target user's groups from the database -- and
+# minimized WSL images ship neither sg nor newgrp (both live in `passwd`).
+# Returns 127 when neither exists, which callers read as "cannot help here".
+with_docker_group() {
+    if have sg; then
+        with_tty sg docker -c "$1"
+    elif have sudo; then
+        with_tty sudo -u "$(id -un)" -- sh -c "$1"
+    else
+        return 127
+    fi
+}
+
+# The same two routes, replacing this process rather than waiting on one.
+exec_in_docker_group() {
+    if have sg; then
+        exec sg docker -c "$1"
+    elif have sudo; then
+        exec sudo -u "$(id -un)" -- sh -c "$1"
+    fi
+}
+
 run_setup() {
     # setup owns the rest: prerequisite versions, the agent key, and the
     # runtime download that makes the first `up` a start rather than a wait.
@@ -737,15 +761,12 @@ run_setup() {
     fi
 
     # This shell was started before the docker group was granted, so it cannot
-    # reach the socket. `sg` runs one command under a group you already belong
-    # to -- enough to finish the install now instead of after a logout.
-    if have sg; then
-        with_tty sg docker -c "cd '$INNATE_DIR' && $BANNER_SHOWN ./innate-sim setup" || die "$setup_failed"
+    # reach the socket -- but a NEW process can be given the group without a
+    # new login session (see with_docker_group).
+    if with_docker_group "cd '$INNATE_DIR' && $BANNER_SHOWN ./innate-sim setup"; then
         return 0
-    fi
-    if have sudo; then
-        with_tty sudo -u "$(id -un)" -- sh -c "cd '$INNATE_DIR' && $BANNER_SHOWN ./innate-sim setup" || die "$setup_failed"
-        return 0
+    elif [ $? -ne 127 ]; then
+        die "$setup_failed"
     fi
     report_relogin
     exit 0
@@ -838,11 +859,14 @@ offer_to_start() {
     [ "$INTERACTIVE" -eq 1 ] || return 0
     confirm "  Start the simulator now?" || return 0
     printf '\n'
-    if [ "$NEED_RELOGIN" -eq 1 ] && have sg; then
-        exec 0<&3
-        exec sg docker -c "$BANNER_SHOWN '$INNATE_DIR/innate-sim' up"
-    fi
     exec 0<&3
+    if [ "$NEED_RELOGIN" -eq 1 ]; then
+        # Same reason as run_setup: this process has no docker group, so
+        # exec-ing the launcher directly would hand it a socket it cannot open.
+        exec_in_docker_group "$BANNER_SHOWN '$INNATE_DIR/innate-sim' up"
+        report_relogin
+        exit 0
+    fi
     exec env INNATE_BANNER_SHOWN=1 "$INNATE_DIR/innate-sim" up
 }
 

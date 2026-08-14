@@ -269,10 +269,10 @@ Innate OS includes a MuJoCo digital twin of MARS that runs the **real robot soft
 curl -fsSL https://link.innate.bot/sim | sh
 ```
 
-One command on macOS, Linux and WSL2. It asks before installing anything missing (Docker, uv, git), clones this repository into `~/innate-os`, asks how the agent should reach a cloud LLM, and downloads everything the simulator needs (simulation assets, the 3D viewer bundle, the Docker image). Already have a checkout? `./innate-sim setup` does the same from inside it.
+One command on macOS, Linux and WSL2. It asks before installing anything missing (Docker, uv, git), clones this repository into `innate-os/` in the directory you run it from, asks how the agent should reach a cloud LLM, and downloads everything the simulator needs (simulation assets, the 3D viewer bundle, the Docker image). Already have a checkout? `./innate-sim setup` does the same from inside it.
 
 ```bash
-cd ~/innate-os && ./innate-sim up
+cd innate-os && ./innate-sim up
 ```
 
 The terminal opens a live dashboard, and the robot webapp at [https://localhost](https://localhost) is the sim UI -- drive and operate the simulated MARS exactly like a real one, with a live 3D view instead of camera streams.

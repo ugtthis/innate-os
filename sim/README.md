@@ -20,13 +20,15 @@ curl -fsSL https://link.innate.bot/sim | sh
 
 That is the whole install on macOS, Linux and WSL2: it asks before installing
 anything missing (Docker, uv, git, the Linux rendering libraries), clones this
-repository into `~/innate-os`, asks how the agent should reach a cloud LLM, and
-downloads the runtime — so the first `./innate-sim up` is a start, not a
-download. Then:
+repository into `innate-os/` in the directory you run it from, asks how the
+agent should reach a cloud LLM, and downloads the runtime — so the first
+`./innate-sim up` is a start, not a download. Then:
 
 ```bash
-cd ~/innate-os && ./innate-sim up
+cd innate-os && ./innate-sim up
 ```
+
+Set `INNATE_DIR` to put the checkout somewhere else.
 
 Prefer to do it yourself? The rest of this section is the same setup by hand.
 

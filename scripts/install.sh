@@ -19,7 +19,9 @@ set -eu
 
 REPO_URL="${INNATE_REPO_URL:-https://github.com/innate-inc/innate-os.git}"
 REF="${INNATE_SIM_REF:-sim-stable}"
-INNATE_DIR="${INNATE_DIR:-$HOME/innate-os}"
+# Where `git clone` would put it: in the directory you ran this from.
+INNATE_DIR_EXPLICIT=$([ -n "${INNATE_DIR:-}" ] && echo 1 || echo 0)
+INNATE_DIR="${INNATE_DIR:-$(pwd)/innate-os}"
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 DOCKER_INSTALL_URL="https://get.docker.com"
 GL_PACKAGES="libegl1 libgl1 libopengl0 libosmesa6"
@@ -114,6 +116,16 @@ check_install_dir() {
             die "$INNATE_DIR is on the Windows filesystem, which is far too slow for the simulator. Install into the WSL filesystem instead (the default, \$HOME/innate-os)."
             ;;
     esac
+
+    # Nesting a checkout inside another repo confuses both; the cwd default
+    # makes that a real possibility, since a piped installer runs wherever the
+    # terminal happened to be.
+    if [ "$INNATE_DIR_EXPLICIT" -eq 0 ] && have git && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        die "$(pwd) is inside a git repository, so the simulator would be a checkout within a checkout. cd somewhere else, or set INNATE_DIR to where it should live."
+    fi
+    if [ -d "$INNATE_DIR" ] && [ ! -d "$INNATE_DIR/.git" ] && [ -n "$(ls -A "$INNATE_DIR" 2>/dev/null)" ]; then
+        die "$INNATE_DIR already exists and is not an innate-os checkout. Move it aside, or set INNATE_DIR."
+    fi
 
     parent=$(dirname "$INNATE_DIR")
     while [ ! -d "$parent" ] && [ "$parent" != "/" ]; do

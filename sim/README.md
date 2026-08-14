@@ -80,19 +80,6 @@ installs Docker the same way on every Debian-family distro:
 curl -fsSL https://get.docker.com | sudo sh
 ```
 
-Then take a **2.x** Compose plugin. The script installs the newest, and
-Compose 5 cannot mount the sim's viewer assets: it resolves a `type: image`
-mount to the image's manifest digest and hands that to the daemon as an image
-ID, so every `up` after the first fails with `No such image`.
-
-```bash
-V=$(apt-cache madison docker-compose-plugin | awk '{print $3}' | grep -m1 '^2\.')
-sudo apt install -y --allow-downgrades docker-compose-plugin=$V
-```
-
-> Ubuntu's own `docker.io` package is no substitute: at 29.1.3 it is the last
-> engine whose `type: image` mounts are broken (fixed in 29.1.4).
-
 Then let your user talk to Docker:
 
 ```bash

@@ -49,6 +49,7 @@ from runtime import (
     ensure_sim_viewer_bundle,
     ensure_skill_assets,
     ensure_uv_available,
+    ensure_viewer_public_assets,
     ensure_workspace_dirs,
     ensure_world_server,
     open_os_container_shell,
@@ -139,7 +140,9 @@ def cmd_up(
                     "This step needs internet access. Re-run with a connection, or re-run "
                     f"`{CLI_SIM} up --offline` to start with whatever is already downloaded."
                 ) from exc
-        with live_step("viewer", "Fetching the 3D viewer bundle", "3D viewer bundle"):
+        with live_step("viewer", "Downloading the 3D view assets", "3D view assets"):
+            ensure_viewer_public_assets(config)
+        with live_step("bundle", "Fetching the 3D viewer bundle", "3D viewer bundle"):
             ensure_sim_viewer_bundle(config, offline=offline)
         with live_step("world", "Starting the physics world", "physics world"):
             config["world_endpoint"] = ensure_world_server(config)

@@ -453,7 +453,6 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
     # Right after the engine probe, before any Compose check can raise over
     # it: a broken-mount daemon plus an old Compose plugin are two problems,
     # and fixing the second must not hide the first.
-    _check_broken_image_mounts(result.stdout, command_hint)
 
     if not require_compose:
         return
@@ -464,7 +463,7 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
     # cryptic bare-`docker` usage error instead of a clear diagnosis.
     try:
         compose = subprocess.run(
-            [*compose_argv(), "version"],
+            ["docker", "compose", "version"],
             text=True,
             stdin=subprocess.DEVNULL,
             capture_output=True,
@@ -495,7 +494,9 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
     _require_min_version(
         "Docker Engine",
         result.stdout,
-        (28, 0),
+        # Conservative floors, not feature-driven: the compose file asks for
+        # nothing exotic now that the image mounts are gone.
+        (20, 10),
         "Update Docker (Desktop: update the app; Linux: reinstall docker-ce from Docker's\nrepo)",
         command_hint,
         DOCKER_INSTALL_URL,
@@ -505,76 +506,12 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
     _require_min_version(
         "Docker Compose",
         compose.stdout,
-        (2, 35),
+        (2, 0),
         "Update the Compose plugin (Docker Desktop: update the app; Linux: reinstall\n"
         "docker-compose-v2 / docker-compose-plugin from Docker's repo)",
         command_hint,
         COMPOSE_INSTALL_URL,
     )
-    _refuse_broken_compose(compose.stdout, command_hint)  # only the verbs that mount images
-
-
-# Docker 29.0.0 names an image mount's layer directory after the hex of the whole
-# mount spec -- past NAME_MAX=255 for even our shortest ref, so `up` dies at
-# container create with "file name too long" (moby#51687; 29.1.4 hashes it).
-BROKEN_IMAGE_MOUNTS_SINCE = (29, 0, 0)
-BROKEN_IMAGE_MOUNTS_FIXED = (29, 1, 4)
-# The verbs that create the container, or fill a cache only it can use.
-IMAGE_MOUNT_VERBS = ("up", "setup")
-
-# Compose 5 resolves a `type: image` mount source to the image's MANIFEST
-# digest and hands that to the daemon as an image ID. Image IDs are config
-# digests, so the daemon answers "No such image: sha256:..." at container
-# create and every `up` after the first fails. Verified on 5.4.0 against
-# daemon 29.7.2, where the same compose file works on 2.40.3 and a plain
-# `docker run --mount type=image` works on any version -- the CLI passes a
-# reference and lets the daemon resolve it.
-#
-# No fixed 5.x release is known, so the whole major is refused; narrow this
-# the moment one ships.
-BROKEN_COMPOSE_IMAGE_MOUNTS_SINCE = (5, 0, 0)
-# Kept in step with COMPOSE_2X_VERSION in scripts/install-sim.sh.
-COMPOSE_2X_RELEASE = "https://github.com/docker/compose/releases/download/v2.40.3"
-
-
-@functools.cache  # `up` probes the daemon twice (cmd_up, then start_cloud_agent) -- warn once
-def _check_broken_image_mounts(version_output: str | None, command_hint: str) -> None:
-    """Refuse the verbs that need `type: image` mounts on a daemon whose mounts
-    are broken; warn on the rest.
-
-    It used to warn for everything, on the grounds that only `up` creates a
-    container. But `setup` spends several gigabytes filling a cache for an
-    `up` that cannot start, and a warning above a download nobody reads is
-    indistinguishable from consent. Silent on an unparseable version, like
-    _require_min_version.
-    """
-    version = _parse_version(version_output)
-    if version is None or len(version) < 3:
-        return
-    if not BROKEN_IMAGE_MOUNTS_SINCE <= version < BROKEN_IMAGE_MOUNTS_FIXED:
-        return
-    running = ".".join(map(str, version))
-    since = ".".join(map(str, BROKEN_IMAGE_MOUNTS_SINCE))
-    fixed = ".".join(map(str, BROKEN_IMAGE_MOUNTS_FIXED))
-    remedy = (
-        f"Update Docker Desktop -- the app update ships a fixed engine ({fixed} or newer)."
-        if sys.platform == "darwin"
-        else (
-            f"Update Docker Engine to {fixed} or newer, e.g. from Docker's own repo:\n"
-            "  curl -fsSL https://get.docker.com | sudo sh\n"
-            "(Ubuntu's docker.io can sit on a broken patch with nothing newer in apt.)"
-        )
-    )
-    message = (
-        f"Docker Engine {running} cannot mount the sim viewer's assets.\n"
-        f"Engines from {since} fail every `type: image` mount with 'file name too long'\n"
-        f"(moby#51687, fixed in {fixed}), so the container cannot be created at all.\n"
-        f"{remedy}\n"
-        f"Details: https://github.com/moby/moby/issues/51687"
-    )
-    if command_hint.rsplit(maxsplit=1)[-1] in IMAGE_MOUNT_VERBS:
-        raise StackError(message)
-    warn(message)
 
 
 def _parse_version(version_output: str | None) -> tuple[int, ...] | None:
@@ -583,47 +520,6 @@ def _parse_version(version_output: str | None) -> tuple[int, ...] | None:
     if found is None:
         return None
     return tuple(int(part) for part in found.groups() if part is not None)
-
-
-def _refuse_broken_compose(version_output: str | None, command_hint: str) -> None:
-    """Refuse, not warn, unlike the daemon's broken window: there the container
-    merely fails to create, here every `up` after the first one does, and the
-    error names a digest that exists nowhere. Silent on an unparseable version,
-    like the checks around it."""
-    version = _parse_version(version_output)
-    if version is None or version[:3] < BROKEN_COMPOSE_IMAGE_MOUNTS_SINCE:
-        return
-    running = ".".join(map(str, version))
-    if command_hint.rsplit(maxsplit=1)[-1] not in IMAGE_MOUNT_VERBS:
-        # `down`, `clean` and `status` need no image mount, and refusing them
-        # would leave a running stack with no way to stop it from the launcher.
-        warn(f"Docker Compose {running} cannot mount the sim viewer's assets, so `{CLI_SIM} up` will refuse.")
-        return
-    # Docker Desktop bundles Compose, so on macOS there is no package to
-    # downgrade -- the fix is a 2.x plugin in the directory the CLI reads
-    # first. The apt remedy would be nonsense there.
-    if sys.platform == "darwin":
-        arch = "aarch64" if oci.host_arch() == "arm64" else "x86_64"
-        remedy = (
-            "Docker Desktop bundles Compose, so install a 2.x plugin where the CLI looks first:\n"
-            "  mkdir -p ~/.docker/cli-plugins\n"
-            f"  curl -fsSL {COMPOSE_2X_RELEASE}/docker-compose-darwin-{arch} \\\n"
-            "    -o ~/.docker/cli-plugins/docker-compose\n"
-            "  chmod +x ~/.docker/cli-plugins/docker-compose"
-        )
-    else:
-        remedy = (
-            "Install the newest 2.x Compose, which is unaffected:\n"
-            "  V=$(apt-cache madison docker-compose-plugin | awk '{print $3}' | grep -m1 '^2\\.')\n"
-            "  sudo apt install -y --allow-downgrades docker-compose-plugin=$V"
-        )
-    raise StackError(
-        f"Docker Compose {running} cannot mount the sim viewer's assets: it resolves a\n"
-        "`type: image` mount to the image's manifest digest and passes that as an image ID,\n"
-        "so the daemon answers `No such image` when the container is created.\n"
-        f"{remedy}\n"
-        f"Then rerun `{command_hint}`. Guide: {COMPOSE_INSTALL_URL}"
-    )
 
 
 def _require_min_version(
@@ -642,8 +538,8 @@ def _require_min_version(
     if version is None or version[:2] >= minimum:
         return
     raise StackError(
-        f"{label} {'.'.join(map(str, version))} is too old: the sim mounts its viewer assets straight from "
-        f"an image (`type: image`), which needs {label} {minimum[0]}.{minimum[1]} or newer.\n"
+        f"{label} {'.'.join(map(str, version))} is older than the simulator supports; "
+        f"it needs {label} {minimum[0]}.{minimum[1]} or newer.\n"
         f"{remedy}, then rerun `{command_hint}`.\nGuide: {guide_url}"
     )
 
@@ -948,12 +844,6 @@ def ensure_os_container(config: dict[str, object], os_env_file: Path, *, offline
         compose_values = {"INNATE_OS_ENV_FILE": str(os_env_file)}
         if os_image:
             compose_values["INNATE_OS_IMAGE"] = os_image
-        # The viewer's public assets (models, physics) mount straight off this
-        # image. The bundle has its own, below.
-        compose_values["INNATE_SIM_ASSETS_IMAGE"] = assets_image_ref(config)
-        # Published or locally built; ensure_sim_viewer_bundle has made sure
-        # whichever it is exists.
-        compose_values["INNATE_SIM_VIEWER_BUNDLE_IMAGE"] = viewer_image_ref(config)
         compose_values["VIRTUAL_MARS_REMOTE"] = str(config.get("world_endpoint", "") or "")
         compose_env = os_compose_env(compose_values, env_file=os_env_file)
         log("Starting Innate OS dev container...")
@@ -1162,25 +1052,11 @@ def viewer_bundle_built_locally() -> bool:
         return False
 
 
-# Compose we installed ourselves, for hosts whose own is one that cannot mount
-# images. NOT ~/.docker/cli-plugins: Docker Desktop manages that directory and
-# re-links its own plugins into it, so a binary left there is replaced without
-# warning. A path we own is a path that stays put.
-OWN_COMPOSE = Path.home() / ".innate" / "bin" / "docker-compose"
-
-
-def compose_argv() -> list[str]:
-    """The compose this launcher actually runs."""
-    if OWN_COMPOSE.is_file() and os.access(OWN_COMPOSE, os.X_OK):
-        return [str(OWN_COMPOSE)]
-    return ["docker", "compose"]
-
-
 def docker_compose_cmd(*parts: str) -> list[str]:
     # One compose file for every invocation: dist-lib is always an image mount,
     # only WHICH image varies (see viewer_image_ref), so there is no overlay to
     # apply on `up` and forget on every later subcommand.
-    return [*compose_argv(), "-f", "sim/docker-compose.dev.yml", *parts]
+    return ["docker", "compose", "-f", "sim/docker-compose.dev.yml", *parts]
 
 
 def os_compose_exec_cmd(*parts: str) -> list[str]:
@@ -1713,8 +1589,87 @@ def ensure_sim_assets(config: dict[str, object]) -> None:
         shutil.rmtree(staging, ignore_errors=True)
 
 
+def ensure_viewer_public_assets(config: dict[str, object]) -> None:
+    """Install the models and physics the webapp serves at /models and /physics.
+
+    The same image as the geometry, a different layer -- and on disk rather
+    than mounted from the image, for the reasons in install_layer_subtree.
+    """
+    sim_repo: Path = config["sim_repo"]  # type: ignore[assignment]
+    install_layer_subtree(
+        assets_image_ref(config),
+        ASSETS_IMAGE_LAYERS.index("viewer"),
+        "viewer",
+        sim_repo / "viewer" / "public",
+        sim_repo / "viewer" / "public" / ".installed-tag",
+        label="viewer assets",
+    )
+
+
+def install_layer_subtree(
+    image: str,
+    layer_index: int,
+    subtree: str,
+    destination: Path,
+    marker: Path,
+    *,
+    label: str,
+) -> None:
+    """Put one subtree of one image layer on disk, idempotently.
+
+    The host reads these directories directly and the container bind-mounts
+    them. They used to be `type: image` mounts, which is a tidier idea and a
+    worse one in practice: two Docker components broke that feature in a
+    single year (moby#51687, and Compose 5 resolving the source to a manifest
+    digest), and both failures land on a user who never chose the feature.
+
+    Idempotent through `marker`, which lives INSIDE the directory it describes
+    (like sim/assets/.assets-tag): both are gitignored, so neither shows up as
+    a working-tree change -- which would make every checkout look dirty and
+    send the viewer bundle down the local-build path forever -- and deleting
+    the directory forgets the marker with it. It holds "<layer digest> <ref>" --
+    the digest, so a tag that moved for an unrelated input does not re-fetch,
+    and the ref, so an override that renames the image does.
+    """
+    parts = marker.read_text().split() if marker.exists() else []
+    if parts[1:] == [image] and destination.is_dir() and any(destination.iterdir()):
+        return
+
+    manifest = oci.manifest_for_image(image)
+    digest = manifest["layers"][layer_index]["digest"]
+    if parts[:1] == [digest] and destination.is_dir() and any(destination.iterdir()):
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(f"{digest} {image}\n")
+        return
+
+    # Staged beside the destination so the install is a rename, not a copy
+    # across filesystems.
+    blob = destination.parent / f".{destination.name}.tmp.tar.gz"
+    staging = destination.parent / f".{destination.name}.tmp"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+    try:
+        repo, _ = oci.split_ref(image)
+        with blob.open("wb") as handle:
+            oci.fetch_layer(repo, digest, handle, oci.anon_token(repo), label=label)
+        oci.safe_extract(blob, staging)
+        source = staging / subtree
+        if not source.is_dir():
+            raise StackError(f"{shorten_docker_image_ref(image)} layer {digest[7:19]} has no {subtree}/ subtree.")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(destination, ignore_errors=True)
+        shutil.move(str(source), str(destination))
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(f"{digest} {image}\n")
+        log(f"{label} {digest[7:19]} installed.")
+    finally:
+        blob.unlink(missing_ok=True)
+        shutil.rmtree(staging, ignore_errors=True)
+
+
 def viewer_image_ref(config: dict[str, object]) -> str:
-    """The image compose mounts dist-lib from.
+    """The image the bundle came from, for reporting and for the local build.
 
     Published `inputs-<content hash of sim/viewer>` normally, or the local build
     when the working tree has diverged from HEAD.
@@ -1737,28 +1692,89 @@ def viewer_image_ref(config: dict[str, object]) -> str:
 
 
 def ensure_sim_viewer_bundle(config: dict[str, object], *, offline: bool = False) -> None:
-    """Make sure the image holding the webapp's 3D-view bundle exists.
+    """Install the SimSession bundle the webapp loads, at sim/viewer/dist-lib.
 
-    Published image when one describes this checkout, otherwise built right
-    here from sim/viewer/Dockerfile. Two ways to end up building:
+    The published bundle when one describes this checkout -- fetched as a layer
+    over plain HTTPS, so this path needs no Docker at all -- otherwise built
+    here from sim/viewer/Dockerfile and copied out of the image. Two ways to
+    end up building:
 
       * the tree is dirty, so no published image CAN describe it
       * the tree is clean but CI has not published it yet (or retention expired
         a branch tag) -- worth a warning, not worth blocking on
 
-    Either way the bundle arrives as a mounted image, so the host needs Docker
-    and never Node.js. Never runs on robots.
+    Either way the bundle lands on disk and the container bind-mounts it, so
+    the host never needs Node.js. Never runs on robots.
     """
-    if os.environ.get("INNATE_SIM_VIEWER_BUNDLE_IMAGE", "").strip():
-        # An explicit override names the image; building a different one and
-        # mounting neither would be the one useless outcome.
-        return
-    if not viewer_bundle_built_locally() and _published_bundle_usable(config, offline=offline):
-        return
-    _build_viewer_image_locally(config, offline=offline)
+    sim_repo: Path = config["sim_repo"]  # type: ignore[assignment]
+    destination = sim_repo / "viewer" / "dist-lib"
+    marker = destination / ".installed-tag"
+
+    override = os.environ.get("INNATE_SIM_VIEWER_BUNDLE_IMAGE", "").strip()
+    if not override and not viewer_bundle_built_locally():
+        image = resolve_viewer_image(config["os_repo"])  # type: ignore[arg-type]
+        try:
+            # A marker match returns before any network call, which is what
+            # makes this work offline.
+            install_layer_subtree(image, 0, "bundle", destination, marker, label="viewer bundle")
+            config["viewer_bundle_image"] = image
+            return
+        except oci.OciError as exc:
+            if offline:
+                raise StackError(
+                    f"Offline, and the sim viewer bundle is not installed:\n  {image}\n"
+                    f"Run `{CLI_SIM} up` online once first."
+                ) from exc
+            # A permanently broken publish pipeline would otherwise be
+            # invisible: everyone would quietly build their own.
+            warn(
+                f"No published sim viewer bundle for this commit ({shorten_docker_image_ref(image)}).\n"
+                "  CI may still be publishing it (publish-viewer-bundle.yml, about a minute). "
+                "Building it locally with the same Dockerfile in the meantime."
+            )
+
+    image = override or _build_viewer_image_locally(config, offline=offline)
+    _extract_bundle_from_image(config, image, destination, marker)
 
 
-def _build_viewer_image_locally(config: dict[str, object], *, offline: bool) -> None:
+def _extract_bundle_from_image(config: dict[str, object], image: str, destination: Path, marker: Path) -> None:
+    """Copy /bundle out of a local image, for the builds no registry has.
+
+    `docker cp` from a created-but-never-started container: the bundle is
+    static files, and starting the image to read them would need it to have an
+    entrypoint worth running.
+    """
+    os_repo: Path = config["os_repo"]  # type: ignore[assignment]
+    env = os_compose_env()
+    image_id = capture_command_output(
+        ["docker", "image", "inspect", image, "--format", "{{.Id}}"], cwd=os_repo, env=env
+    )
+    if marker.exists() and marker.read_text().split()[:1] == [image_id] and destination.is_dir():
+        return
+
+    container = capture_command_output(["docker", "create", image], cwd=os_repo, env=env).strip()
+    if not container:
+        raise StackError(f"Could not create a container from {shorten_docker_image_ref(image)} to read the bundle.")
+    staging = destination.parent / f".{destination.name}.tmp"
+    shutil.rmtree(staging, ignore_errors=True)
+    try:
+        run_logged(
+            ["docker", "cp", f"{container}:/bundle/.", str(staging)],
+            cwd=os_repo,
+            env=env,
+            log_path=VIEWER_BUILD_LOG_PATH,
+            failure_message=f"Could not copy the viewer bundle out of {shorten_docker_image_ref(image)}.",
+        )
+        shutil.rmtree(destination, ignore_errors=True)
+        shutil.move(str(staging), str(destination))
+        marker.write_text(f"{image_id} {image}\n")
+        log("Viewer bundle installed.")
+    finally:
+        subprocess.run(["docker", "rm", "-f", container], cwd=os_repo, env=env, capture_output=True, check=False)
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def _build_viewer_image_locally(config: dict[str, object], *, offline: bool) -> str:
     """Build sim/viewer/Dockerfile into LOCAL_VIEWER_IMAGE_REPO:inputs-<hash>.
 
     Skipped when that tag is already in the store: the tag hashes the build's
@@ -1777,7 +1793,7 @@ def _build_viewer_image_locally(config: dict[str, object], *, offline: bool) -> 
     config["viewer_bundle_image"] = image
     env = os_compose_env()
     if docker_image_present(image, cwd=os_repo, env=env):
-        return
+        return image
     # The two ways to get here have different remedies: stash your own edit, or
     # wait for CI to finish publishing.
     why = "sim/viewer differs from HEAD" if viewer_bundle_built_locally() else "nothing is published for it"
@@ -1789,7 +1805,7 @@ def _build_viewer_image_locally(config: dict[str, object], *, offline: bool) -> 
             "The build installs npm dependencies, which needs a connection. Re-run online, or "
             "check out a commit whose bundle you have already built."
         )
-    log(f"Building the sim viewer bundle image ({why})...")
+    log(f"Building the sim viewer bundle ({why})...")
     run_logged_with_heartbeat(
         [
             "docker",
@@ -1818,54 +1834,7 @@ def _build_viewer_image_locally(config: dict[str, object], *, offline: bool) -> 
     # Every edit to sim/viewer mints a new tag, so these pile up faster than
     # any other local image in the project.
     prune_stale_local_images(image, cwd=os_repo, env=env, label="sim viewer bundle")
-
-
-def _published_bundle_usable(config: dict[str, object], *, offline: bool) -> bool:
-    """Can compose mount the published bundle for this checkout?
-
-    False means "build it here instead" -- the caller's fallback. The warning
-    matters: a permanently broken publish pipeline would otherwise be
-    invisible, since every user would just quietly build their own.
-
-    Probed here and NOT in viewer_bundle_built_locally, which is asked on paths
-    that must not touch the network. Records the chosen ref in the config, as
-    _build_viewer_image_locally does.
-    """
-    image = resolve_viewer_image(config["os_repo"])  # type: ignore[arg-type]
-    os_repo: Path = config["os_repo"]  # type: ignore[assignment]
-    if docker_image_present(image, cwd=os_repo, env=os_compose_env()):
-        config["viewer_bundle_image"] = image
-        return True
-    if offline:
-        # Fatal, not a fallback: the local build needs the network too (npm ci).
-        raise StackError(
-            "Offline, and the sim viewer bundle image is not in the local Docker store:\n"
-            f"  {image}\n"
-            f"Run `{CLI_SIM} up` online once first."
-        )
-    if _viewer_image_published(image):
-        config["viewer_bundle_image"] = image
-        return True
-    warn(
-        f"No published sim viewer bundle for this commit ({image}).\n"
-        "  CI may still be publishing it (publish-viewer-bundle.yml, about a minute). "
-        "Building it locally with the same Dockerfile in the meantime."
-    )
-    return False
-
-
-def _viewer_image_published(image: str) -> bool:
-    """Does the registry serve `image` to an anonymous client?
-
-    The registry API rather than `docker manifest inspect`, because the
-    anonymous HTTPS path is the one users actually pull on -- so this also
-    catches GHCR making a brand-new package private, where every fetch 401s.
-    """
-    try:
-        oci.manifest_for_image(image)
-    except oci.OciError:
-        return False
-    return True
+    return image
 
 
 def _recv_exact(conn: socket.socket, n: int) -> bytes | None:
@@ -1957,12 +1926,8 @@ def prefetch_runtime(config: dict[str, object]) -> None:
     phases: list[tuple[str, str, str, Callable[[], None]]] = [
         ("assets", "Downloading the world geometry", "world geometry", lambda: ensure_sim_assets(config)),
         ("skills", "Downloading the skill assets", "skill assets", lambda: ensure_skill_assets(config)),
-        (
-            "viewer",
-            "Fetching the 3D viewer bundle",
-            "3D viewer bundle",
-            lambda: ensure_sim_viewer_bundle(config, offline=False),
-        ),
+        ("viewer", "Downloading the 3D view assets", "3D view assets", lambda: ensure_viewer_public_assets(config)),
+        ("bundle", "Fetching the 3D viewer bundle", "3D viewer bundle", lambda: ensure_sim_viewer_bundle(config)),
         ("image", "Pulling the Innate OS image", "Innate OS image", lambda: _prefetch_os_image(config)),
         ("world", "Preparing the sim world environment", "sim world environment", lambda: _prefetch_world_env(config)),
     ]

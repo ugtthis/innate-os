@@ -30,9 +30,6 @@ INNATE_DIR_EXPLICIT=$([ -n "${INNATE_DIR:-}" ] && echo 1 || echo 0)
 INNATE_DIR="${INNATE_DIR:-$(pwd)/innate-os}"
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 DOCKER_INSTALL_URL="https://get.docker.com"
-# Compose 2.x, for hosts where apt has no candidate (Docker Desktop on WSL).
-COMPOSE_2X_URL="https://github.com/docker/compose/releases/download"
-COMPOSE_2X_VERSION="v2.40.3"
 GL_PACKAGES="libegl1 libgl1 libopengl0 libosmesa6"
 # Disk each step needs, in GB, measured on a full install rather than guessed:
 #
@@ -55,8 +52,6 @@ DOCKER_WAIT_S=180
 LOG_FILE="${INNATE_INSTALL_LOG:-$HOME/.innate-install.log}"
 VERBOSE="${INNATE_VERBOSE:-0}"
 LOG_TAIL_ROWS=3
-OWN_COMPOSE_DIR="$HOME/.innate/bin"
-OWN_COMPOSE="$OWN_COMPOSE_DIR/docker-compose"
 # Distinct from any exit status a real command produces.
 NO_GROUP_ROUTE=97
 # Survives sudo's env_reset and sg, which inheritance does not.
@@ -555,9 +550,6 @@ build_plan() {
             plan_add "Install Docker Engine + Compose (from $DOCKER_INSTALL_URL, needs sudo)" "$DISK_GB_DOCKER"
         fi
     }
-    if have docker && [ "$(compose_major)" -ge 5 ] 2>/dev/null; then
-        plan_add "Install Docker Compose 2.x, which the simulator needs (5.x cannot mount its assets)" 0
-    fi
     uv_installed || plan_add "Install uv, which runs the physics world (user-local, no sudo)" "$DISK_GB_UV"
     if [ "$PLATFORM" != "macos" ] && have apt-get; then
         plan_add "Install the rendering libraries: $GL_PACKAGES (needs sudo)" "$DISK_GB_RENDER"
@@ -746,174 +738,6 @@ whale icon to settle, then run this installer again."
         fi
         die "The Docker daemon is installed but did not start. Start it (sudo systemctl start docker) and rerun this command."
     fi
-    # After the daemon, not before: `docker compose version` needs a docker
-    # CLI on PATH, and on macOS that arrives with Docker Desktop -- which the
-    # step above may have installed seconds ago.
-    ensure_working_compose
-}
-
-# Compose 5 resolves a `type: image` mount to the image's manifest digest and
-# passes it to the daemon as an image ID, so the container cannot be created
-# (see BROKEN_COMPOSE_IMAGE_MOUNTS_SINCE in sim/launcher/runtime.py). Docker's
-# repo still carries 2.x, which works, so take the newest of those. Whichever
-# repo get.docker.com configured is the one asked -- no second source.
-apt_compose_2x() {
-    apt-cache madison docker-compose-plugin 2>/dev/null | awk '{print $3}' | grep -m1 '^2\.'
-}
-
-install_compose_from_apt() {
-    as_root apt-get install -y -qq --allow-downgrades "docker-compose-plugin=$(apt_compose_2x)"
-}
-
-# Into a directory we own, NOT ~/.docker/cli-plugins: Docker Desktop manages
-# that one and re-links its own plugins into it, so a binary left there is
-# silently replaced and the fix evaporates. The launcher runs this copy
-# directly (runtime.compose_argv), so nothing has to win a search path.
-install_own_compose() {
-    case "$(uname -m)" in
-        x86_64 | amd64) compose_arch=x86_64 ;;
-        aarch64 | arm64) compose_arch=aarch64 ;;
-        *) return 1 ;;
-    esac
-    case "$(uname -s)" in
-        Darwin) compose_os=darwin ;;
-        Linux) compose_os=linux ;;
-        *) return 1 ;;
-    esac
-    mkdir -p "$OWN_COMPOSE_DIR"
-    curl -fsSL "$COMPOSE_2X_URL/$COMPOSE_2X_VERSION/docker-compose-$compose_os-$compose_arch" \
-        -o "$TMPDIR_INSTALL/docker-compose"
-    chmod +x "$TMPDIR_INSTALL/docker-compose"
-    mv "$TMPDIR_INSTALL/docker-compose" "$OWN_COMPOSE"
-}
-
-# The compose that will actually run: ours when we have installed one, which
-# is what sim/launcher/runtime.py picks too.
-compose_version() {
-    if [ -x "$OWN_COMPOSE" ]; then
-        "$OWN_COMPOSE" version --short 2>/dev/null
-    else
-        docker compose version --short 2>/dev/null
-    fi
-}
-
-compose_major() {
-    compose_version | cut -d. -f1
-}
-
-# Never take the install's word for it: the last attempt reported success for
-# a binary Docker Desktop had already replaced.
-compose_took_effect() {
-    major=$(compose_major)
-    case "$major" in
-        '' | *[!0-9]*) return 1 ;;
-    esac
-    [ "$major" -lt 5 ]
-}
-
-ensure_working_compose() {
-    major=$(compose_major)
-    case "$major" in
-        '' | *[!0-9]*) return 0 ;; # unreadable version: the launcher diagnoses it
-    esac
-    [ "$major" -ge 5 ] || return 0
-
-    done_msg="Docker Compose 2.x installed ($major.x breaks image mounts)"
-    if have apt-get && [ -n "$(apt_compose_2x)" ]; then
-        prime_sudo
-        step "compose" "Installing Docker Compose 2.x" "$done_msg" install_compose_from_apt &&
-            compose_took_effect && return 0
-    fi
-    # No apt candidate is the normal case under Docker Desktop's WSL
-    # integration: Compose comes from Desktop, and no Docker repo is
-    # configured inside the distro.
-    step "compose" "Installing Docker Compose 2.x" "$done_msg" install_own_compose &&
-        compose_took_effect && return 0
-
-    warn "Could not install a working Docker Compose, and $major.x cannot mount the sim's
-viewer assets. Install a 2.x Compose plugin by hand before \`innate-sim up\`:
-  https://github.com/docker/compose/releases"
-}
-
-# Docker's own image mounts are broken from 29.0.0 until 29.1.4 (moby#51687):
-# every `type: image` mount fails with 'file name too long', so the container
-# cannot be created. Same window the launcher refuses `up` and `setup` on.
-engine_mounts_broken() {
-    engine_version=$(docker info --format '{{.Server.Version}}' 2>/dev/null) || return 1
-    engine_major=${engine_version%%.*}
-    engine_rest=${engine_version#*.}
-    engine_minor=${engine_rest%%.*}
-    engine_patch=${engine_rest#*.}
-    engine_patch=${engine_patch%%[!0-9]*}
-    case "$engine_major:$engine_minor:$engine_patch" in
-        *[!0-9:]* | *::*) return 1 ;;
-    esac
-    [ "$engine_major" -eq 29 ] || return 1
-    [ "$engine_minor" -eq 0 ] && return 0
-    if [ "$engine_minor" -eq 1 ] && [ "$engine_patch" -lt 4 ]; then
-        return 0
-    fi
-    return 1
-}
-
-# An NVIDIA runtime means this Docker is load-bearing for something else --
-# on a Jetson it is pinned against nvidia-container-toolkit, and replacing it
-# from Docker's repo can take GPU containers down with it. Not ours to touch.
-docker_belongs_to_something_else() {
-    docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -qi nvidia
-}
-
-running_containers() {
-    docker ps -q 2>/dev/null | wc -l | tr -d ' '
-}
-
-upgrade_docker_engine() {
-    curl -fsSL "$DOCKER_INSTALL_URL" -o "$TMPDIR_INSTALL/get-docker.sh"
-    as_root sh "$TMPDIR_INSTALL/get-docker.sh"
-}
-
-# Offered, never assumed: upgrading restarts the daemon, which stops every
-# container on the machine -- not only ours.
-ensure_working_engine() {
-    engine_mounts_broken || return 0
-    blocked "Docker Engine $engine_version cannot mount the simulator's viewer assets.
-Upgrade it to 29.1.4 or newer."
-    warn "Docker Engine $engine_version cannot mount the simulator's viewer assets
-(moby#51687: every \`type: image\` mount fails until 29.1.4)."
-
-    if [ "$PLATFORM" = "macos" ]; then
-        note "update Docker Desktop -- its update ships a fixed engine"
-        return 0
-    fi
-    if docker_belongs_to_something_else; then
-        note "this Docker has an NVIDIA runtime configured, so it is left alone"
-        note "upgrade it the way it was installed, then rerun"
-        return 0
-    fi
-
-    printf '\n'
-    note "upgrading to the current release from https://get.docker.com fixes it"
-    running=$(running_containers)
-    if [ "$running" -gt 0 ]; then
-        note "this restarts the Docker daemon and stops $running running container(s)"
-    else
-        note "this restarts the Docker daemon"
-    fi
-    printf '\n'
-    if ! confirm "  Upgrade Docker Engine?" no; then
-        return 0
-    fi
-    printf '\n'
-    prime_sudo
-    if ! step "docker" "Upgrading Docker Engine" "Docker Engine upgraded" upgrade_docker_engine; then
-        warn "The Docker upgrade did not finish; see $LOG_FILE."
-        return 0
-    fi
-    if engine_mounts_broken; then
-        warn "Docker Engine is still $engine_version, which cannot mount the viewer assets."
-        return 0
-    fi
-    BLOCKED_REASON=""
 }
 
 install_uv() {
@@ -1159,7 +983,6 @@ main() {
 
     ensure_git
     ensure_docker
-    ensure_working_engine
     ensure_uv
     ensure_render_libs
     clone_repo

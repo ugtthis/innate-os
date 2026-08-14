@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import grp
 import hashlib
 import json
 import os
+import pwd
 import re
 import shlex
 import shutil
@@ -22,6 +24,7 @@ from urllib.request import Request, urlopen
 import oci
 from config import (
     ASSETS_IMAGE_LAYERS,
+    BOOTSTRAP_LOG_PATH,
     CLI_SIM,
     COMPOSE_LOG_PATH,
     COMPOSE_PROJECT_NAME,
@@ -57,6 +60,7 @@ from config import (
     resolve_local_os_image,
     resolve_local_viewer_image,
     resolve_viewer_image,
+    success,
     viewer_tree_dirty,
     warn,
 )
@@ -160,6 +164,51 @@ def run_logged_with_heartbeat(
         raise StackError(f"{failure_message}\nRecent log output:\n{tail_file(log_path, limit=60)}")
 
 
+DOCKER_GROUP = "docker"
+DOCKER_GROUP_REEXEC_ENV = "INNATE_SIM_DOCKER_GROUP_REEXEC"
+
+
+def _docker_group_is_stale() -> bool:
+    """Is this user a member of the docker group everywhere except in this
+    process? That is precisely what `usermod -aG docker` leaves behind: the
+    grant is in /etc/group, but a process only reads its groups at creation,
+    so every shell opened before it stays locked out until the next login.
+    """
+    if sys.platform != "linux":
+        return False
+    try:
+        entry = grp.getgrnam(DOCKER_GROUP)
+        user = pwd.getpwuid(os.getuid()).pw_name
+    except KeyError:
+        return False
+    return entry.gr_gid not in os.getgroups() and user in entry.gr_mem
+
+
+def reexec_under_docker_group() -> None:
+    """Re-run this command with the docker group applied, or return.
+
+    `sg` runs one command under a group the caller is already a member of --
+    the non-interactive half of `newgrp`, and the only way to fix this without
+    a new login session, since no process can add a group to a running one.
+    Returns (rather than raising) whenever it cannot help, leaving the caller's
+    own diagnosis to stand.
+    """
+    if os.environ.get(DOCKER_GROUP_REEXEC_ENV) or not _docker_group_is_stale():
+        return
+    if shutil.which("sg") is None:
+        return
+    command = shlex.join([sys.executable, str(Path(sys.argv[0]).resolve()), *sys.argv[1:]])
+    log(f"Your user is in the {DOCKER_GROUP} group, but this shell predates it -- rerunning under `sg`.")
+    log("A new login session will not need this.")
+    # The guard rides along in the environment: an sg that somehow does not
+    # confer the group must fail once, not fork forever.
+    os.environ[DOCKER_GROUP_REEXEC_ENV] = "1"
+    try:
+        os.execvp("sg", ["sg", DOCKER_GROUP, "-c", command])
+    except OSError:
+        os.environ.pop(DOCKER_GROUP_REEXEC_ENV, None)
+
+
 def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: bool = True) -> None:
     """Check Docker (and, unless opted out, the Compose v2 plugin).
 
@@ -211,6 +260,7 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
         if "permission denied" in detail_lower:
             # The daemon runs fine; this user just isn't in the docker group
             # yet (the usual state right after `apt install docker.io`).
+            reexec_under_docker_group()  # returns only if it cannot be fixed here
             raise StackError(
                 "Docker is running, but your user is not allowed to talk to it (permission denied "
                 "on the Docker socket).\n"
@@ -1645,6 +1695,67 @@ def ensure_uv_available() -> None:
     """Prerequisite gate for commands that need the host world server."""
     if find_uv() is None:
         raise StackError(_UV_MISSING_MESSAGE)
+
+
+def prefetch_runtime(config: dict[str, object]) -> None:
+    """Download everything the first `up` would otherwise fetch, so that `up`
+    is a start rather than a multi-gigabyte download.
+
+    Every step is idempotent and individually non-fatal: a prefetch that only
+    gets half way leaves `up` with less to do, never with a broken state.
+    """
+    log("Downloading the simulator runtime (a few GB on a cold machine)...")
+    ensure_sim_assets(config)
+    ensure_skill_assets(config)
+    ensure_sim_viewer_bundle(config, offline=False)
+    _prefetch_os_image(config)
+    _prefetch_world_env(config)
+    success("Simulator runtime downloaded.")
+
+
+def _prefetch_os_image(config: dict[str, object]) -> None:
+    os_image = str(config["os_image"]).strip()
+    if not os_image or not config["os_pull_image"]:
+        return  # os.image = "local": there is no prebuilt to pull
+    try:
+        ensure_os_image_available(
+            os_image,
+            cwd=config["os_repo"],  # type: ignore[arg-type]
+            env=os_compose_env(),
+            pull_if_missing=True,
+            include_pull_log_on_failure=not config["os_image_auto"],
+        )
+    except StackError:
+        if not config["os_image_auto"]:
+            raise
+        # `up` handles this the same way, with the same fallback -- warn and
+        # let it, rather than failing a setup that has otherwise succeeded.
+        warn(
+            f"No prebuilt Innate OS image for this checkout ({shorten_docker_image_ref(os_image)}).\n"
+            f"`{CLI_SIM} up` will build one locally instead, which takes considerably longer."
+        )
+
+
+def _prefetch_world_env(config: dict[str, object]) -> None:
+    """Resolve the host venv the world server runs in (MuJoCo, rendering).
+
+    Not covered by any Docker pull -- it is built on the host by uv, and is
+    the largest remaining cold-start cost once the images are local.
+    """
+    uv = find_uv()
+    if uv is None:
+        warn(f"uv is not installed, so the sim world's Python environment was not prepared for `{CLI_SIM} up`.")
+        return
+    sim_repo: Path = config["sim_repo"]  # type: ignore[assignment]
+    log("Preparing the sim world's Python environment...")
+    run_logged_with_heartbeat(
+        [uv, "sync", "--project", str(sim_repo)],
+        cwd=sim_repo,
+        env=os.environ.copy(),
+        log_path=BOOTSTRAP_LOG_PATH,
+        failure_message="Could not prepare the sim world's Python environment.",
+        progress_message="uv is still resolving the sim world's Python environment.",
+    )
 
 
 def _world_server_bind_addresses() -> str:

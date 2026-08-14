@@ -51,6 +51,7 @@ from runtime import (
     ensure_workspace_dirs,
     ensure_world_server,
     open_os_container_shell,
+    prefetch_runtime,
     print_startup_checks,
     remove_legacy_cloud_agent,
     runtime_already_running,
@@ -264,23 +265,33 @@ def cmd_logs(target: str, lines: int | None = None) -> None:
     print(tail_file(path, limit=lines or 120))
 
 
-def cmd_setup(config: dict[str, object]) -> None:
+def cmd_setup(config: dict[str, object], *, prefetch: bool = True) -> None:
     print_banner()
     ensure_docker_available(command_hint=f"{CLI_SIM} setup")
     ensure_uv_prerequisite()
+    # The key question first, the long download second: a multi-gigabyte
+    # prefetch that stops on a prompt is one the user walks away from.
     configure_brain_backend(config)
+    if prefetch:
+        prefetch_runtime(config)
     success("Simulator setup is ready.")
     print(f"OS secrets: {ENV_PATH}")
     print(f"Sim config: {SIM_CONFIG_PATH}")
+    log(f"Start the simulator with `{CLI_SIM} up`.")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="innate-sim", description="Innate local simulator CLI.")
     sim_subparsers = parser.add_subparsers(dest="sim_command", required=True)
-    sim_subparsers.add_parser(
+    setup_parser = sim_subparsers.add_parser(
         "setup",
         prog=f"{CLI_SIM} setup",
-        help="Prepare the simulator runtime credentials",
+        help="Prepare the simulator: prerequisites, agent keys, and the runtime download",
+    )
+    setup_parser.add_argument(
+        "--no-prefetch",
+        action="store_true",
+        help="Configure keys only; leave the images and assets for the first `up` to download",
     )
     up_parser = sim_subparsers.add_parser(
         "up",
@@ -365,7 +376,7 @@ def main() -> int:
         config = get_config()
 
         if args.sim_command == "setup":
-            cmd_setup(config)
+            cmd_setup(config, prefetch=not args.no_prefetch)
         elif args.sim_command == "up":
             cmd_up(
                 config,

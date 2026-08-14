@@ -447,6 +447,7 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
         command_hint,
         COMPOSE_INSTALL_URL,
     )
+    _refuse_broken_compose(compose.stdout, command_hint)
 
 
 # Docker 29.0.0 names an image mount's layer directory after the hex of the whole
@@ -454,6 +455,18 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
 # container create with "file name too long" (moby#51687; 29.1.4 hashes it).
 BROKEN_IMAGE_MOUNTS_SINCE = (29, 0, 0)
 BROKEN_IMAGE_MOUNTS_FIXED = (29, 1, 4)
+
+# Compose 5 resolves a `type: image` mount source to the image's MANIFEST
+# digest and hands that to the daemon as an image ID. Image IDs are config
+# digests, so the daemon answers "No such image: sha256:..." at container
+# create and every `up` after the first fails. Verified on 5.4.0 against
+# daemon 29.7.2, where the same compose file works on 2.40.3 and a plain
+# `docker run --mount type=image` works on any version -- the CLI passes a
+# reference and lets the daemon resolve it.
+#
+# No fixed 5.x release is known, so the whole major is refused; narrow this
+# the moment one ships.
+BROKEN_COMPOSE_IMAGE_MOUNTS_SINCE = (5, 0, 0)
 
 
 @functools.cache  # `up` probes the daemon twice (cmd_up, then start_cloud_agent) -- warn once
@@ -497,6 +510,26 @@ def _parse_version(version_output: str | None) -> tuple[int, ...] | None:
     if found is None:
         return None
     return tuple(int(part) for part in found.groups() if part is not None)
+
+
+def _refuse_broken_compose(version_output: str | None, command_hint: str) -> None:
+    """Refuse, not warn, unlike the daemon's broken window: there the container
+    merely fails to create, here every `up` after the first one does, and the
+    error names a digest that exists nowhere. Silent on an unparseable version,
+    like the checks around it."""
+    version = _parse_version(version_output)
+    if version is None or version[:3] < BROKEN_COMPOSE_IMAGE_MOUNTS_SINCE:
+        return
+    running = ".".join(map(str, version))
+    raise StackError(
+        f"Docker Compose {running} cannot mount the sim viewer's assets: it resolves a\n"
+        "`type: image` mount to the image's manifest digest and passes that as an image ID,\n"
+        "so the daemon answers `No such image` when the container is created.\n"
+        "Install the newest 2.x Compose, which is unaffected:\n"
+        "  V=$(apt-cache madison docker-compose-plugin | awk '{print $3}' | grep -m1 '^2\\.')\n"
+        "  sudo apt install -y --allow-downgrades docker-compose-plugin=$V\n"
+        f"Then rerun `{command_hint}`. Guide: {COMPOSE_INSTALL_URL}"
+    )
 
 
 def _require_min_version(

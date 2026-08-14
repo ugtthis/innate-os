@@ -83,8 +83,13 @@ else
     BOLD="" DIM="" RED="" GREEN="" YELLOW="" CYAN="" NC=""
 fi
 
-case "${COLORTERM:-}" in
-    truecolor | 24bit) TRUECOLOR=1 ;;
+# COLORTERM is the usual signal, but ssh forwards only TERM (it is not in the
+# default SendEnv), so a session reached over ssh arrives without it. A TERM
+# advertising direct color is the second witness; without either, the logo
+# falls back to flat cyan and nothing else changes.
+case "${COLORTERM:-}:${TERM:-}" in
+    truecolor:* | 24bit:*) TRUECOLOR=1 ;;
+    *:*direct* | *:*truecolor*) TRUECOLOR=1 ;;
     *) TRUECOLOR=0 ;;
 esac
 
@@ -547,6 +552,7 @@ ensure_docker() {
         fi
     fi
 
+    ensure_working_compose
     if docker_group_pending; then
         NEED_RELOGIN=1
         note "added you to the docker group"
@@ -558,6 +564,36 @@ ensure_docker() {
         fi
         die "The Docker daemon is installed but did not start. Start it (sudo systemctl start docker) and rerun this command."
     fi
+}
+
+# Compose 5 resolves a `type: image` mount to the image's manifest digest and
+# passes it to the daemon as an image ID, so the container cannot be created
+# (see BROKEN_COMPOSE_IMAGE_MOUNTS_SINCE in sim/launcher/runtime.py). Docker's
+# repo still carries 2.x, which works, so take the newest of those. Whichever
+# repo get.docker.com configured is the one asked -- no second source.
+install_working_compose() {
+    compose_2x=$(apt-cache madison docker-compose-plugin 2>/dev/null | awk '{print $3}' | grep -m1 '^2\.')
+    [ -n "$compose_2x" ] || return 1
+    as_root apt-get install -y -qq --allow-downgrades "docker-compose-plugin=$compose_2x"
+}
+
+compose_major() {
+    docker compose version --short 2>/dev/null | cut -d. -f1
+}
+
+ensure_working_compose() {
+    major=$(compose_major)
+    case "$major" in
+        '' | *[!0-9]*) return 0 ;; # unreadable version: the launcher diagnoses it
+    esac
+    [ "$major" -ge 5 ] || return 0
+    if ! have apt-get; then
+        warn "Docker Compose $major.x breaks the sim's image mounts; install a 2.x Compose plugin before \`innate-sim up\`."
+        return 0
+    fi
+    prime_sudo
+    step "compose" "Docker Compose 2.x ($major.x breaks image mounts)" install_working_compose ||
+        die "Could not install a working Docker Compose. Install the newest 2.x docker-compose-plugin, then rerun."
 }
 
 install_uv() {

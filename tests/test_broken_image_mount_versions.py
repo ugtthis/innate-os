@@ -65,6 +65,31 @@ def test_an_unparseable_version_says_nothing(warnings):
     assert warnings == []
 
 
+@pytest.mark.parametrize("version", ["5.0.0", "5.4.0", "6.0.0"])
+def test_a_broken_compose_is_refused(version):
+    """Refused rather than warned, unlike the daemon window: Compose 5 resolves
+    a `type: image` mount to the image's manifest digest and passes it as an
+    image ID, so the container cannot be created at all. Verified on 5.4.0
+    against daemon 29.7.2, where 2.40.3 runs the same file."""
+    with pytest.raises(runtime.StackError) as failure:
+        runtime._refuse_broken_compose(f"Docker Compose version v{version}", f"{runtime.CLI_SIM} up")
+    message = str(failure.value)
+    assert f"Docker Compose {version} " in message
+    assert "docker-compose-plugin=" in message  # the remedy is a command, not a description
+
+
+@pytest.mark.parametrize("version", ["2.35.0", "2.40.3", "4.9.9"])
+def test_a_working_compose_is_accepted(version):
+    runtime._refuse_broken_compose(f"Docker Compose version v{version}", f"{runtime.CLI_SIM} up")
+
+
+def test_an_unparseable_compose_version_is_accepted():
+    """Same reasoning as the daemon check: an unrecognised build string is not
+    evidence of a broken one."""
+    for output in ("", None, "dev", "v"):
+        runtime._refuse_broken_compose(output, f"{runtime.CLI_SIM} up")
+
+
 def _fake_docker(engine_version):
     def run(cmd, **kwargs):
         stdout = engine_version if cmd[:2] == ["docker", "info"] else "Docker Compose version v2.39.1"

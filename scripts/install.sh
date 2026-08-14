@@ -30,6 +30,9 @@ INNATE_DIR_EXPLICIT=$([ -n "${INNATE_DIR:-}" ] && echo 1 || echo 0)
 INNATE_DIR="${INNATE_DIR:-$(pwd)/innate-os}"
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 DOCKER_INSTALL_URL="https://get.docker.com"
+# Compose 2.x, for hosts where apt has no candidate (Docker Desktop on WSL).
+COMPOSE_2X_URL="https://github.com/docker/compose/releases/download"
+COMPOSE_2X_VERSION="v2.40.3"
 GL_PACKAGES="libegl1 libgl1 libopengl0 libosmesa6"
 # Disk each step needs, in GB, measured on a full install rather than guessed:
 #
@@ -600,10 +603,28 @@ ensure_docker() {
 # (see BROKEN_COMPOSE_IMAGE_MOUNTS_SINCE in sim/launcher/runtime.py). Docker's
 # repo still carries 2.x, which works, so take the newest of those. Whichever
 # repo get.docker.com configured is the one asked -- no second source.
-install_working_compose() {
-    compose_2x=$(apt-cache madison docker-compose-plugin 2>/dev/null | awk '{print $3}' | grep -m1 '^2\.')
-    [ -n "$compose_2x" ] || return 1
-    as_root apt-get install -y -qq --allow-downgrades "docker-compose-plugin=$compose_2x"
+apt_compose_2x() {
+    apt-cache madison docker-compose-plugin 2>/dev/null | awk '{print $3}' | grep -m1 '^2\.'
+}
+
+install_compose_from_apt() {
+    as_root apt-get install -y -qq --allow-downgrades "docker-compose-plugin=$(apt_compose_2x)"
+}
+
+# The CLI reads ~/.docker/cli-plugins before the system one, so this also wins
+# over the plugin Docker Desktop injects into WSL -- where there is no Docker
+# apt repo to install from, and no package to downgrade.
+install_compose_plugin_binary() {
+    case "$(uname -m)" in
+        x86_64 | amd64) compose_arch=x86_64 ;;
+        aarch64 | arm64) compose_arch=aarch64 ;;
+        *) return 1 ;;
+    esac
+    mkdir -p "$HOME/.docker/cli-plugins"
+    curl -fsSL "$COMPOSE_2X_URL/$COMPOSE_2X_VERSION/docker-compose-linux-$compose_arch" \
+        -o "$TMPDIR_INSTALL/docker-compose"
+    chmod +x "$TMPDIR_INSTALL/docker-compose"
+    mv "$TMPDIR_INSTALL/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
 }
 
 compose_major() {
@@ -616,13 +637,20 @@ ensure_working_compose() {
         '' | *[!0-9]*) return 0 ;; # unreadable version: the launcher diagnoses it
     esac
     [ "$major" -ge 5 ] || return 0
-    if ! have apt-get; then
-        warn "Docker Compose $major.x breaks the sim's image mounts; install a 2.x Compose plugin before \`innate-sim up\`."
-        return 0
+
+    done_msg="Docker Compose 2.x installed ($major.x breaks image mounts)"
+    if have apt-get && [ -n "$(apt_compose_2x)" ]; then
+        prime_sudo
+        step "compose" "Installing Docker Compose 2.x" "$done_msg" install_compose_from_apt && return 0
     fi
-    prime_sudo
-    step "compose" "Installing Docker Compose 2.x" "Docker Compose 2.x installed ($major.x breaks image mounts)" install_working_compose ||
-        die "Could not install a working Docker Compose. Install the newest 2.x docker-compose-plugin, then rerun."
+    # No apt candidate is the normal case under Docker Desktop's WSL
+    # integration: Compose comes from Desktop, and no Docker repo is
+    # configured inside the distro.
+    step "compose" "Installing Docker Compose 2.x" "$done_msg" install_compose_plugin_binary && return 0
+
+    warn "Could not install a working Docker Compose, and $major.x cannot mount the sim's
+viewer assets. Install a 2.x Compose plugin by hand before \`innate-sim up\`:
+  https://github.com/docker/compose/releases"
 }
 
 install_uv() {

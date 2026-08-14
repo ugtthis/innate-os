@@ -892,7 +892,9 @@ exec_in_docker_group() {
 run_setup() {
     # setup owns the rest: prerequisite versions, the agent key, and the
     # runtime download that makes the first `up` a start rather than a wait.
-    setup_failed="Setup did not finish (see above). Fix the problem, then rerun: cd $INNATE_DIR && ./innate-sim setup"
+    # A command the reader retypes, so the path is quoted like every other one.
+    setup_failed="Setup did not finish (see above). Fix the problem, then rerun:
+  cd $(display_path "$INNATE_DIR") && ./innate-sim setup"
     printf '\n'
 
     if [ "$NEED_RELOGIN" -eq 0 ]; then

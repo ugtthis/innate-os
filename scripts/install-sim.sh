@@ -184,10 +184,20 @@ step() {
 # number of rows, so the cursor can be walked back over them.
 draw_step_frame() {
     frame_width=$(terminal_width)
-    frame_room=$((frame_width - 20))
+    # "  " + 8 label + "  " + spinner + " " = 14 before the message, then
+    # "  " + elapsed + "s" after it; the log rows spend 14 on "  " + 8 + "  | ".
+    frame_room=$((frame_width - 17 - ${#2}))
+    tail_room=$((frame_width - 14))
     printf '\033[K  %s%8s%s  %s %s  %s%ss%s\n' \
         "$CYAN" "$step_label" "$NC" "$1" "$(printf '%s' "$step_msg" | cut -c "1-$frame_room")" "$DIM" "$2" "$NC"
-    tail -n "$LOG_TAIL_ROWS" "$LOG_FILE" 2>/dev/null | tr -d '\r' | cut -c "1-$frame_room" >"$TMPDIR_INSTALL/tail"
+    # Tabs and colour codes are what a package manager actually emits, and
+    # both lie about width: cut counts a tab as one character while the
+    # terminal spends up to eight columns on it, and an escape sequence is
+    # counted but occupies none. Either way the row stops fitting, wraps, and
+    # every redraw leaves the last one behind.
+    tail -n "$LOG_TAIL_ROWS" "$LOG_FILE" 2>/dev/null |
+        tr -d '\r' | tr '\t' ' ' | sed "s/$(printf '\033')\[[0-9;]*[A-Za-z]//g" |
+        cut -c "1-$tail_room" >"$TMPDIR_INSTALL/tail"
     tail_row=0
     while IFS= read -r tail_line; do
         printf '\033[K  %s%8s  │ %s%s\n' "$DIM" "" "$tail_line" "$NC"
@@ -219,13 +229,23 @@ terminal_width() {
         width=$(stty size <&3 2>/dev/null | awk '{print $2}')
     fi
     if [ -z "$width" ]; then
+        width=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
+    fi
+    if [ -z "$width" ]; then
+        width=${COLUMNS:-}
+    fi
+    # `tput cols` last, and never trusted alone: it reads the size through
+    # stdout, which is a pipe inside this command substitution, so it answers
+    # with terminfo's static 80 whatever the terminal really is. Believing it
+    # on a narrower one is what makes every frame wrap and stack.
+    if [ -z "$width" ]; then
         width=$(tput cols 2>/dev/null || printf '80')
     fi
     case "$width" in
         '' | *[!0-9]*) width=80 ;;
     esac
     if [ "$width" -lt 40 ]; then
-        width=80
+        width=40
     fi
     printf '%s' "$width"
 }

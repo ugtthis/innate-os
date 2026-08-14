@@ -118,12 +118,15 @@ spinner_frame() {
     printf '%s' "$1"
 }
 
-# step <label> <message> <command...>: run it with its output in the log,
-# showing one live line that settles into a check mark.
+# step <label> <doing> <done> <command...>: run it with its output in the log,
+# showing one live line that settles into a check mark. Two messages, because
+# a spinner beside a noun does not say whether the noun is being installed or
+# merely inspected.
 step() {
     step_label=$1
     step_msg=$2
-    shift 2
+    step_done=$3
+    shift 3
     if [ -z "$NC" ] || [ "$VERBOSE" != "0" ]; then
         say "$step_label" "$step_msg"
         "$@" >>"$LOG_FILE" 2>&1 || return 1
@@ -148,7 +151,7 @@ step() {
     if ! wait "$step_pid"; then
         return 1
     fi
-    printf '  %s%8s%s  %s✔%s %s\n' "$CYAN" "$step_label" "$NC" "$GREEN" "$NC" "$step_msg"
+    printf '  %s%8s%s  %s✔%s %s\n' "$CYAN" "$step_label" "$NC" "$GREEN" "$NC" "$step_done"
 }
 
 # The status line plus the tail of the log, so a long step shows its work
@@ -491,7 +494,7 @@ ensure_git() {
         die "git is missing. Finish the Command Line Tools install macOS just offered, then rerun this command."
     fi
     prime_sudo
-    step "git" "git" install_git || die "Could not install git."
+    step "git" "Installing git" "git installed" install_git || die "Could not install git."
 }
 
 start_docker_daemon() {
@@ -545,10 +548,10 @@ docker_group_pending() {
 ensure_docker() {
     if ! have docker; then
         if [ "$PLATFORM" = "macos" ]; then
-            step "docker" "Docker Desktop" install_docker_macos || die "Could not install Docker Desktop."
+            step "docker" "Installing Docker Desktop" "Docker Desktop installed" install_docker_macos || die "Could not install Docker Desktop."
         else
             prime_sudo
-            step "docker" "Docker Engine + Compose" install_docker_linux || die "Could not install Docker."
+            step "docker" "Installing Docker Engine + Compose" "Docker Engine + Compose installed" install_docker_linux || die "Could not install Docker."
         fi
     fi
 
@@ -558,7 +561,7 @@ ensure_docker() {
         note "added you to the docker group"
         return 0
     fi
-    if ! step "docker" "daemon running" start_docker_daemon; then
+    if ! step "docker" "Starting the Docker daemon" "Docker daemon running" start_docker_daemon; then
         if [ "$PLATFORM" = "macos" ]; then
             die "Docker Desktop did not finish starting within ${DOCKER_WAIT_S}s. Open it, wait for it to settle, then rerun this command."
         fi
@@ -592,7 +595,7 @@ ensure_working_compose() {
         return 0
     fi
     prime_sudo
-    step "compose" "Docker Compose 2.x ($major.x breaks image mounts)" install_working_compose ||
+    step "compose" "Installing Docker Compose 2.x" "Docker Compose 2.x installed ($major.x breaks image mounts)" install_working_compose ||
         die "Could not install a working Docker Compose. Install the newest 2.x docker-compose-plugin, then rerun."
 }
 
@@ -602,7 +605,7 @@ install_uv() {
 }
 
 ensure_uv() {
-    uv_installed || step "uv" "uv" install_uv || die "Could not install uv."
+    uv_installed || step "uv" "Installing uv" "uv installed" install_uv || die "Could not install uv."
     # The installer's default location, which the current shell does not have
     # on PATH yet. Same paths the launcher looks in (runtime.find_uv).
     PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
@@ -623,7 +626,7 @@ ensure_render_libs() {
         return 0
     fi
     prime_sudo
-    step "render" "OpenGL libraries" install_render_libs || die "Could not install the rendering libraries."
+    step "render" "Installing the OpenGL libraries" "OpenGL libraries installed" install_render_libs || die "Could not install the rendering libraries."
 }
 
 update_checkout() {
@@ -642,11 +645,11 @@ clone_checkout() {
 
 clone_repo() {
     if [ -d "$INNATE_DIR/.git" ]; then
-        step "repo" "updated $INNATE_DIR" update_checkout || die "Could not update $INNATE_DIR."
+        step "repo" "Updating $INNATE_DIR" "updated $INNATE_DIR" update_checkout || die "Could not update $INNATE_DIR."
     else
         git ls-remote --exit-code --heads "$REPO_URL" "$REF" >/dev/null 2>&1 ||
             die "$REPO_URL has no branch named $REF. Set INNATE_SIM_REF to one that exists (main, for the development tip), or report this at https://discord.gg/innate."
-        step "repo" "cloned into $INNATE_DIR" clone_checkout || die "Could not clone $REPO_URL."
+        step "repo" "Cloning innate-os into $INNATE_DIR" "cloned into $INNATE_DIR" clone_checkout || die "Could not clone $REPO_URL."
         # Blobless rather than shallow: full history for log/bisect at a
     fi
     note "$REF at $(git -C "$INNATE_DIR" rev-parse --short HEAD)"

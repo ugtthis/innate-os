@@ -1843,15 +1843,15 @@ def prefetch_runtime(config: dict[str, object]) -> None:
     gets half way leaves `up` with less to do, never with a broken state.
     """
     print()
-    with live_step("assets", "world geometry"):
+    with live_step("assets", "Downloading the world geometry", "world geometry"):
         ensure_sim_assets(config)
-    with live_step("skills", "skill assets"):
+    with live_step("skills", "Downloading the skill assets", "skill assets"):
         ensure_skill_assets(config)
-    with live_step("viewer", "3D viewer bundle"):
+    with live_step("viewer", "Fetching the 3D viewer bundle", "3D viewer bundle"):
         ensure_sim_viewer_bundle(config, offline=False)
-    with live_step("image", "Innate OS image"):
+    with live_step("image", "Pulling the Innate OS image", "Innate OS image"):
         _prefetch_os_image(config)
-    with live_step("world", "sim world environment"):
+    with live_step("world", "Preparing the sim world environment", "sim world environment"):
         _prefetch_world_env(config)
     print()
 

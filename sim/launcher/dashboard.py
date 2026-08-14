@@ -40,10 +40,14 @@ ASCII_BANNER = [
     r"|___|_| \_|_| \_/_/   \_\_| |_____|",
 ]
 
-TRUECOLOR = USE_COLOR and os.environ.get("COLORTERM", "").lower() in {
-    "truecolor",
-    "24bit",
-}
+# COLORTERM is the usual signal, but ssh forwards only TERM (it is not in the
+# default SendEnv), so a session reached over ssh -- `limactl shell` included --
+# arrives without it. A TERM advertising direct color is the second witness.
+TRUECOLOR = USE_COLOR and (
+    os.environ.get("COLORTERM", "").lower() in {"truecolor", "24bit"}
+    or "direct" in os.environ.get("TERM", "")
+    or "truecolor" in os.environ.get("TERM", "")
+)
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 ASCII_MIRROR_MAP = str.maketrans(
     {
@@ -271,9 +275,12 @@ class LiveStep:
     the message, rather than scrolling the line away.
     """
 
-    def __init__(self, label: str, message: str) -> None:
+    def __init__(self, label: str, message: str, done: str | None = None) -> None:
         self.label = label
         self.message = message
+        # What it says once finished; the message is what it says while
+        # working, which wants a verb.
+        self.done = done or message
         self.detail = ""
         # For work that reports failure by returning rather than raising.
         self.ok = True
@@ -321,6 +328,7 @@ class LiveStep:
             sys.stdout.write("\r\033[K")
             _set_cursor(CURSOR_SHOW)
         self.detail = ""
+        self.message = self.done
         print(self._render(f"{GREEN}✔{NC}" if ok else f"{RED}✗{NC}"))
 
 
@@ -332,9 +340,9 @@ def active_step() -> LiveStep | None:
 
 
 @contextlib.contextmanager
-def live_step(label: str, message: str):
+def live_step(label: str, message: str, done: str | None = None):
     global _active_step
-    step = LiveStep(label, message)
+    step = LiveStep(label, message, done)
     previous, _active_step = _active_step, step
     step.start()
     try:

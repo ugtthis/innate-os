@@ -49,9 +49,9 @@ image, the ROS build) is provisioned automatically on first start:
 - **uv** — runs the physics world natively on your machine
   (`./innate-sim setup` offers to install this one for you).
 
-A machine with 4 CPU cores and 8 GB of RAM is comfortable. The first start
-downloads and builds a few GB, so it takes a while; later starts take
-seconds.
+16 GB of RAM and 4 or more CPU cores is comfortable; 8 GB runs it, but the
+physics and the robot's software compete for the machine. The first start
+downloads a few GB, so it takes a while; later starts take seconds.
 
 <details>
 <summary><b>macOS</b></summary>

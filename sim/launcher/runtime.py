@@ -415,7 +415,7 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
     # Right after the engine probe, before any Compose check can raise over
     # it: a broken-mount daemon plus an old Compose plugin are two problems,
     # and fixing the second must not hide the first.
-    _warn_broken_image_mounts(result.stdout)
+    _check_broken_image_mounts(result.stdout, command_hint)
 
     if not require_compose:
         return
@@ -481,6 +481,8 @@ def ensure_docker_available(*, command_hint: str = CLI_SIM, require_compose: boo
 # container create with "file name too long" (moby#51687; 29.1.4 hashes it).
 BROKEN_IMAGE_MOUNTS_SINCE = (29, 0, 0)
 BROKEN_IMAGE_MOUNTS_FIXED = (29, 1, 4)
+# The verbs that create the container, or fill a cache only it can use.
+IMAGE_MOUNT_VERBS = ("up", "setup")
 
 # Compose 5 resolves a `type: image` mount source to the image's MANIFEST
 # digest and hands that to the daemon as an image ID. Image IDs are config
@@ -496,11 +498,16 @@ BROKEN_COMPOSE_IMAGE_MOUNTS_SINCE = (5, 0, 0)
 
 
 @functools.cache  # `up` probes the daemon twice (cmd_up, then start_cloud_agent) -- warn once
-def _warn_broken_image_mounts(version_output: str | None) -> None:
-    """Warn -- not refuse, every other verb works -- when the daemon's `type: image`
-    mounts are broken, so `up` fails at preflight with a diagnosis instead of a hex
-    blob. Names `up` whichever verb ran the preflight: only `up` creates the
-    container. Silent on an unparseable version, like _require_min_version."""
+def _check_broken_image_mounts(version_output: str | None, command_hint: str) -> None:
+    """Refuse the verbs that need `type: image` mounts on a daemon whose mounts
+    are broken; warn on the rest.
+
+    It used to warn for everything, on the grounds that only `up` creates a
+    container. But `setup` spends several gigabytes filling a cache for an
+    `up` that cannot start, and a warning above a download nobody reads is
+    indistinguishable from consent. Silent on an unparseable version, like
+    _require_min_version.
+    """
     version = _parse_version(version_output)
     if version is None or len(version) < 3:
         return
@@ -513,21 +520,21 @@ def _warn_broken_image_mounts(version_output: str | None) -> None:
         f"Update Docker Desktop -- the app update ships a fixed engine ({fixed} or newer)."
         if sys.platform == "darwin"
         else (
-            f"Update Docker Engine to {fixed} or newer (Docker Desktop: update the app).\n"
-            "      Ubuntu's docker.io can sit on a broken patch with nothing newer to upgrade\n"
-            "      to -- if `apt` offers none, switch to Docker's own repo:\n"
-            "      `curl -fsSL https://get.docker.com | sudo sh`"
+            f"Update Docker Engine to {fixed} or newer, e.g. from Docker's own repo:\n"
+            "  curl -fsSL https://get.docker.com | sudo sh\n"
+            "(Ubuntu's docker.io can sit on a broken patch with nothing newer in apt.)"
         )
     )
-    warn(
+    message = (
         f"Docker Engine {running} cannot mount the sim viewer's assets.\n"
-        f"      Engines since {since} fail every `type: image` mount with 'file name too\n"
-        f"      long' (moby#51687, fixed in {fixed}), so `{CLI_SIM} up` will die at container\n"
-        f"      create. No launcher-side workaround exists -- the mount spec is over budget\n"
-        f"      even for the shortest ref.\n"
-        f"      {remedy}\n"
-        f"      Details: https://github.com/moby/moby/issues/51687"
+        f"Engines from {since} fail every `type: image` mount with 'file name too long'\n"
+        f"(moby#51687, fixed in {fixed}), so the container cannot be created at all.\n"
+        f"{remedy}\n"
+        f"Details: https://github.com/moby/moby/issues/51687"
     )
+    if command_hint.rsplit(maxsplit=1)[-1] in IMAGE_MOUNT_VERBS:
+        raise StackError(message)
+    warn(message)
 
 
 def _parse_version(version_output: str | None) -> tuple[int, ...] | None:

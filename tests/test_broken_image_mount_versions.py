@@ -24,18 +24,23 @@ import runtime  # noqa: E402
 def warnings(monkeypatch):
     emitted: list[str] = []
     monkeypatch.setattr(runtime, "warn", emitted.append)
-    runtime._warn_broken_image_mounts.cache_clear()
+    # The check is cached so `up`'s two preflights warn once; each test needs
+    # its own history.
+    runtime._check_broken_image_mounts.cache_clear()
     return emitted
+
+
+# A verb that neither creates the container nor fills a cache for one.
+LOOKING_ONLY = f"{runtime.CLI_SIM} status"
 
 
 @pytest.mark.parametrize("version", ["29.0.0", "29.1.0", "29.1.3"])
 def test_a_broken_daemon_is_named_before_it_fails(warnings, version):
-    runtime._warn_broken_image_mounts(version)
+    runtime._check_broken_image_mounts(version, LOOKING_ONLY)
     assert len(warnings) == 1
     # The running version, not the range literal the message also carries.
     assert warnings[0].startswith(f"Docker Engine {version} ")
     assert "51687" in warnings[0]
-    assert f"{runtime.CLI_SIM} up" in warnings[0]
 
 
 @pytest.mark.parametrize(
@@ -44,7 +49,7 @@ def test_a_broken_daemon_is_named_before_it_fails(warnings, version):
 )
 def test_the_remedy_matches_the_host_platform(warnings, monkeypatch, platform, expected):
     monkeypatch.setattr(runtime.sys, "platform", platform)
-    runtime._warn_broken_image_mounts("29.1.3")
+    runtime._check_broken_image_mounts("29.1.3", LOOKING_ONLY)
     assert len(warnings) == 1
     assert expected in warnings[0]
     assert "29.1.4" in warnings[0]  # both remedies name the fixed engine
@@ -52,8 +57,18 @@ def test_the_remedy_matches_the_host_platform(warnings, monkeypatch, platform, e
 
 @pytest.mark.parametrize("version", ["28.4.0", "29.1.4", "29.7.1", "30.0.0"])
 def test_a_working_daemon_says_nothing(warnings, version):
-    runtime._warn_broken_image_mounts(version)
+    runtime._check_broken_image_mounts(version, LOOKING_ONLY)
     assert warnings == []
+
+
+@pytest.mark.parametrize("verb", ["up", "setup"])
+def test_the_verbs_that_need_the_mounts_are_refused(warnings, verb):
+    """A warning above a multi-gigabyte download nobody reads is not consent:
+    `setup` fills a cache only a container can use, and `up` creates it."""
+    with pytest.raises(runtime.StackError) as failure:
+        runtime._check_broken_image_mounts("29.0.4", f"{runtime.CLI_SIM} {verb}")
+    assert "29.0.4" in str(failure.value)
+    assert warnings == []  # refused, not warned and continued
 
 
 def test_an_unparseable_version_says_nothing(warnings):
@@ -61,7 +76,7 @@ def test_an_unparseable_version_says_nothing(warnings):
     unrecognised build string is not evidence of a broken one, and a false
     'your Docker is broken' sends people to reinstall for nothing."""
     for output in ("", None, "dev", "29.1"):
-        runtime._warn_broken_image_mounts(output)
+        runtime._check_broken_image_mounts(output, LOOKING_ONLY)
     assert warnings == []
 
 

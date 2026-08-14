@@ -217,7 +217,7 @@ def _print_options(lines: list[str], *, redraw: bool) -> None:
     if redraw:
         sys.stdout.write(f"\033[{len(lines)}A")
     for line in lines:
-        sys.stdout.write("\r\033[K" + line + "\n")
+        sys.stdout.write("\r\033[K" + line + "\r\n")
     sys.stdout.flush()
 
 

@@ -186,8 +186,10 @@ def labelled(label: str, message: str, colour: str = CYAN) -> str:
     at the margin, so a multi-line remedy still reads as one message."""
     indent = " " * (STEP_LABEL_WIDTH + 4)
     first, *rest = message.split("\n")
-    lines = [f"  {colour}{label:>{STEP_LABEL_WIDTH}}{NC}  {first}"]
-    lines += [f"{indent}{line}" for line in rest]
+    lines = [f"  {colour}{label:>{STEP_LABEL_WIDTH}}{NC}  {first.strip()}"]
+    # Only the indent this function applies: a message written before the
+    # column existed carries its own leading spaces, and the two used to add up.
+    lines += [f"{indent}{line.strip()}" if line.strip() else "" for line in rest]
     return "\n".join(lines)
 
 

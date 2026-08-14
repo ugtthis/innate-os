@@ -555,6 +555,9 @@ uv_installed() {
 # Listed in the order main() does them, which is the order the reader will
 # watch happen. Keep the two in step: a plan that promises Docker before the
 # clone tells someone their key is collected before the checkout exists.
+# The list is what happens AFTER the questions, so the cloud-LLM choice is not
+# in it: it is the next prompt, and a plan that previews the thing already on
+# screen reads as a step out of order.
 build_plan() {
     find_docker_cli || true
     have git || plan_add "Install git (with your package manager)" 1
@@ -566,8 +569,6 @@ build_plan() {
     else
         plan_add "Clone innate-os ($REF) into $INNATE_DIR" "$DISK_GB_CLONE"
     fi
-    # Answered here, into <checkout>/.env, which is why the clone comes first.
-    plan_add "Ask how the agent reaches a cloud LLM" 0
     have docker || {
         if [ "$PLATFORM" = "macos" ]; then
             plan_add "Point you at Docker Desktop, which macOS needs you to install yourself" 0
@@ -604,6 +605,8 @@ review_plan() {
     else
         printf '  %sDetailed output goes to %s%s\n\n' "$DIM" "$LOG_FILE" "$NC"
     fi
+    note "one question first, then it runs on its own"
+    printf '\n'
     confirm "  Continue?" || cancel "nothing was installed"
     printf '\n'
 }

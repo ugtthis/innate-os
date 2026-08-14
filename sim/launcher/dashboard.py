@@ -159,15 +159,28 @@ def menus_supported() -> bool:
     return bool(termios and tty and sys.stdin.isatty() and sys.stdout.isatty())
 
 
+CURSOR_HIDE, CURSOR_SHOW = "\033[?25l", "\033[?25h"
+
+
+def _set_cursor(sequence: str) -> None:
+    """A cursor parked after the last thing drawn reads as an unanswered text
+    prompt. Every path that hides it restores it in a finally."""
+    if USE_COLOR:
+        sys.stdout.write(sequence)
+        sys.stdout.flush()
+
+
 @contextlib.contextmanager
 def _raw_terminal():
     fd = sys.stdin.fileno()
     saved = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
+        _set_cursor(CURSOR_HIDE)
         yield
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        _set_cursor(CURSOR_SHOW)
 
 
 def _read_key() -> str:
@@ -273,6 +286,7 @@ class LiveStep:
         if not self.live:
             print(f"  {self.label:>{STEP_LABEL_WIDTH}}  {self.message}")
             return
+        _set_cursor(CURSOR_HIDE)
         self._thread = threading.Thread(target=self._animate, daemon=True)
         self._thread.start()
 
@@ -299,6 +313,7 @@ class LiveStep:
             self._thread.join()
         if self.live:
             sys.stdout.write("\r\033[K")
+            _set_cursor(CURSOR_SHOW)
         self.detail = ""
         print(self._render(f"{GREEN}✔{NC}" if ok else f"{RED}✗{NC}"))
 

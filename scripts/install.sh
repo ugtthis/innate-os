@@ -43,6 +43,8 @@ NEED_RELOGIN=0
 INTERACTIVE=0
 PLAN=""
 PLAN_N=0
+DISK_FREE_GB=""
+DISK_TARGET=""
 SUDO_PRIMED=0
 STEP_ACTIVE=0
 step_pid=""
@@ -74,6 +76,11 @@ esac
 say() { printf '  %s%8s%s  %s\n' "$CYAN" "$1" "$NC" "$2"; }
 note() { printf '  %s%8s  %s%s\n' "$DIM" "" "$1" "$NC"; }
 warn() { printf '  %s%8s%s  %s\n' "$YELLOW" "warning" "$NC" "$*" >&2; }
+cancel() {
+    printf '  %s%8s%s  %s\n' "$YELLOW" "aborted" "$NC" "$*"
+    exit 0
+}
+
 die() {
     printf '\r\033[K  %s%8s%s  %s\n' "$RED" "failed" "$NC" "$*" >&2
     if [ -s "$LOG_FILE" ]; then
@@ -104,6 +111,7 @@ step() {
     "$@" >>"$LOG_FILE" 2>&1 &
     step_pid=$!
     STEP_ACTIVE=1
+    hide_cursor
     step_n=0
     while kill -0 "$step_pid" 2>/dev/null; do
         # Elapsed from the frame count: this loop spawns enough processes per
@@ -113,6 +121,7 @@ step() {
         sleep 0.12
     done
     erase_step_frame
+    show_cursor
     STEP_ACTIVE=0
     if ! wait "$step_pid"; then
         return 1
@@ -185,9 +194,22 @@ prime_sudo() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# A blinking cursor parked after the last thing drawn reads as an unanswered
+# text prompt. cleanup() restores it, so no exit path can leave it hidden.
+hide_cursor() {
+    if [ -n "$NC" ]; then printf '\033[?25l'; fi
+}
+
+show_cursor() {
+    if [ -n "$NC" ]; then printf '\033[?25h'; fi
+}
+
 # Invoked by the traps in main, which shellcheck does not trace
 # shellcheck disable=SC2329
-cleanup() { [ -n "$TMPDIR_INSTALL" ] && rm -rf "$TMPDIR_INSTALL"; }
+cleanup() {
+    show_cursor
+    [ -n "$TMPDIR_INSTALL" ] && rm -rf "$TMPDIR_INSTALL"
+}
 
 # A trap that only cleans up is not an interrupt handler: the shell resumes
 # where it left off, so Ctrl+C would delete the temp dir and carry on
@@ -289,6 +311,7 @@ confirm() {
 
     confirm_yes=1
     stty raw -echo <&3
+    hide_cursor
     while :; do
         draw_confirm "$confirm_yes"
         read_key
@@ -305,6 +328,7 @@ confirm() {
         esac
     done
     stty "$stty_saved" <&3
+    show_cursor
     draw_confirm "$confirm_yes"
     printf '\n'
     [ "$confirm_yes" -eq 1 ]
@@ -362,10 +386,11 @@ check_install_dir() {
     while [ ! -d "$parent" ] && [ "$parent" != "/" ]; do
         parent=$(dirname "$parent")
     done
-    free_gb=$(df -Pk "$parent" | awk 'NR==2 {print int($4 / 1048576)}')
-    if [ -n "$free_gb" ] && [ "$free_gb" -lt "$MIN_FREE_GB" ]; then
-        warn "Only ${free_gb} GB free on $parent; the simulator needs roughly ${MIN_FREE_GB} GB for images and assets."
-    fi
+    DISK_TARGET=$parent
+    DISK_FREE_GB=$(df -Pk "$parent" | awk 'NR==2 {print int($4 / 1048576)}')
+    case "$DISK_FREE_GB" in
+        '' | *[!0-9]*) DISK_FREE_GB="" ;;
+    esac
 }
 
 uv_installed() {
@@ -395,15 +420,30 @@ build_plan() {
     plan_add "Ask how the agent reaches a cloud LLM, then download the simulator (a few GB)"
 }
 
+# Stated where the decision is made, not warned about above it: running out of
+# disk half way through a multi-gigabyte pull is the expensive way to find out.
+report_disk() {
+    if [ -z "$DISK_FREE_GB" ]; then
+        printf '  %sAbout %s GB of disk is needed.%s\n\n' "$DIM" "$MIN_FREE_GB" "$NC"
+    elif [ "$DISK_FREE_GB" -lt "$MIN_FREE_GB" ]; then
+        printf '  %sNeeds about %s GB of disk, but %s has only %s GB free.%s\n\n' \
+            "$YELLOW" "$MIN_FREE_GB" "$DISK_TARGET" "$DISK_FREE_GB" "$NC"
+    else
+        printf '  %sDisk: about %s GB needed, %s GB free on %s.%s\n\n' \
+            "$DIM" "$MIN_FREE_GB" "$DISK_FREE_GB" "$DISK_TARGET" "$NC"
+    fi
+}
+
 review_plan() {
     printf '\n  %sThe installer will:%s\n\n' "$BOLD" "$NC"
     printf '%s\n' "$PLAN"
+    report_disk
     if [ -z "$NC" ] || [ "$VERBOSE" != "0" ]; then
         printf '  %sCommand output is shown as it runs.%s\n\n' "$DIM" "$NC"
     else
         printf '  %sDetailed output goes to %s%s\n\n' "$DIM" "$LOG_FILE" "$NC"
     fi
-    confirm "  Continue?" || die "Aborted. Nothing was installed."
+    confirm "  Continue?" || cancel "nothing was installed"
     printf '\n'
 }
 

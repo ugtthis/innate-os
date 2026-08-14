@@ -12,7 +12,6 @@ import sys
 import threading
 import time
 import unicodedata
-from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -106,17 +105,6 @@ class DashboardCallbacks:
 class DashboardOptions:
     cli_sim: str
     state_dir: Path
-
-
-class DashboardHistory:
-    def __init__(self, maxlen: int = 32):
-        self.health = deque(maxlen=maxlen)
-
-    def add(self, snapshot: dict[str, object]) -> None:
-        self.health.append(float(snapshot["health_score"]))
-
-    def seed_from_snapshot(self, snapshot: dict[str, object]) -> None:
-        self.add(snapshot)
 
 
 class DashboardRuntime:
@@ -335,144 +323,6 @@ def dashboard_runtime(
         runtime.stop_event.set()
         for thread in threads:
             thread.join(timeout=1.0)
-
-
-def bar_chart_rows(
-    values: list[float],
-    *,
-    width: int,
-    height: int,
-    minimum: float = 0.0,
-    maximum: float | None = None,
-) -> list[str]:
-    blocks = " ▁▂▃▄▅▆▇█"
-    if width <= 0 or height <= 0:
-        return []
-    if not values:
-        return [" " * width for _ in range(height)]
-
-    if len(values) >= width:
-        sampled = values[-width:]
-    else:
-        sampled = [values[0]] * (width - len(values)) + values
-
-    hi = maximum if maximum is not None else max(max(sampled), minimum + 1.0)
-    lo = minimum
-    span = max(hi - lo, 1e-6)
-
-    bar_levels = []
-    for value in sampled:
-        normalized = max(0.0, min(1.0, (value - lo) / span))
-        bar_levels.append(int(round(normalized * height * 8)))
-
-    rows: list[str] = []
-    for row_index in range(height):
-        threshold = (height - row_index - 1) * 8
-        chars: list[str] = []
-        for level in bar_levels:
-            visible = max(0, min(8, level - threshold))
-            chars.append(blocks[visible])
-        rows.append("".join(chars))
-    return rows
-
-
-def colorize_chart_rows(
-    rows: list[str],
-    *,
-    start: tuple[int, int, int],
-    mid: tuple[int, int, int],
-    end: tuple[int, int, int],
-) -> list[str]:
-    if not USE_COLOR:
-        return rows
-    colored: list[str] = []
-    total_rows = max(len(rows), 1)
-    for row_index, row in enumerate(rows):
-        ratio = 1.0 - (row_index / max(total_rows - 1, 1))
-        row_rgb = gradient_rgb(start, mid, end, ratio)
-        out: list[str] = []
-        for char in row:
-            if char == " ":
-                out.append(colorize(char, bg=THEME["panel_fill"]))
-                continue
-            out.append(
-                colorize(
-                    char,
-                    fg=row_rgb,
-                    bg=THEME["panel_fill"],
-                    bold=True,
-                )
-            )
-        colored.append("".join(out))
-    return colored
-
-
-def render_panel_box(
-    title: str,
-    value: str,
-    subtitle: str,
-    chart_lines: list[str],
-    *,
-    width: int,
-    border_rgb: tuple[int, int, int],
-    fill_rgb: tuple[int, int, int],
-) -> list[str]:
-    inner = max(width - 2, 12)
-    top_text = title.center(inner, "─")
-    top = (
-        colorize("┌", fg=border_rgb, bold=True)
-        + gradient_text(top_text, border_rgb, blend_rgb(border_rgb, (255, 255, 255), 0.15), bold=True)
-        + colorize("┐", fg=border_rgb, bold=True)
-    )
-    bottom = (
-        colorize("└", fg=border_rgb, bold=True)
-        + colorize("─" * inner, fg=border_rgb)
-        + colorize("┘", fg=border_rgb, bold=True)
-    )
-    value_line = (
-        colorize("│", fg=border_rgb, bold=True)
-        + colorize(truncate_line(value, inner), fg=THEME["title"], bg=fill_rgb, bold=True)
-        + colorize("│", fg=border_rgb, bold=True)
-    )
-    subtitle_line = (
-        colorize("│", fg=border_rgb, bold=True)
-        + colorize(truncate_line(subtitle, inner), fg=THEME["dim"], bg=fill_rgb)
-        + colorize("│", fg=border_rgb, bold=True)
-    )
-    rendered_chart_lines = [
-        colorize("│", fg=border_rgb, bold=True) + line + colorize("│", fg=border_rgb, bold=True) for line in chart_lines
-    ]
-    return [top, value_line, subtitle_line, *rendered_chart_lines, bottom]
-
-
-def print_metric_panels(snapshot: dict[str, object], history: DashboardHistory) -> int:
-    width = shutil.get_terminal_size((150, 40)).columns
-    panel_width = max(min(width, 72), 24)
-
-    rendered = render_panel_box(
-        " HEALTH ",
-        str(snapshot["stack_label"]),
-        str(snapshot["system_summary"]),
-        colorize_chart_rows(
-            bar_chart_rows(
-                list(history.health),
-                width=max(panel_width - 2, 12),
-                height=4,
-                minimum=0.0,
-                maximum=100.0,
-            ),
-            start=THEME["health_start"],
-            mid=THEME["health_mid"],
-            end=THEME["health_end"],
-        ),
-        width=panel_width,
-        border_rgb=THEME["panel_health"],
-        fill_rgb=THEME["panel_fill"],
-    )
-    for line in rendered:
-        print(line)
-    print()
-    return len(rendered) + 1
 
 
 def truncate_line(text: str, width: int) -> str:
@@ -729,7 +579,6 @@ def render_status(
     options: DashboardOptions,
     *,
     verbose: bool = False,
-    history: DashboardHistory | None = None,
     clear: bool = True,
     snapshot: dict[str, object] | None = None,
     cached_logs: dict[str, list[str]] | None = None,
@@ -739,10 +588,6 @@ def render_status(
         clear_screen()
     if snapshot is None:
         snapshot = callbacks.collect_status_snapshot(config)
-    if history is None:
-        history = DashboardHistory()
-        history.seed_from_snapshot(snapshot)
-
     term_size = shutil.get_terminal_size((150, 40))
     term_width = term_size.columns
     term_height = max(term_size.lines - reserved_top_rows, 1)
@@ -759,7 +604,6 @@ def render_status(
     used_lines += 1
     print(divider_line(term_width))
     used_lines += 1
-    used_lines += print_metric_panels(snapshot, history)
     print_dashboard_line(
         "  ".join(
             [
@@ -776,28 +620,24 @@ def render_status(
     used_lines += 1
     print_dashboard_line(f"{BOLD}System:{NC} {snapshot['system_summary']}", term_width)
     used_lines += 1
+    if term_height >= 24:
+        for marquee_line in render_robot_marquee(term_width):
+            print(marquee_line)
+            used_lines += 1
+
+    # The web app is what the user is here to open; everything else on this
+    # screen is for when something has gone wrong. Spend the whitespace.
     print()
-    used_lines += 1
+    print_dashboard_line(f"    {GREEN}{BOLD}▸  https://localhost{NC}   {DIM}the robot's web app{NC}", term_width)
+    print()
+    used_lines += 3
     print_dashboard_line(
-        f"{BOLD}Web UI:{NC} https://localhost",
-        term_width,
-    )
-    used_lines += 1
-    print_dashboard_line(
-        f"{BOLD}ROSBridge:{NC} ws://localhost:9090",
-        term_width,
-    )
-    used_lines += 1
-    print_dashboard_line(
-        f"{BOLD}Foxglove:{NC} ws://localhost:{config['foxglove_port']}",
-        term_width,
-    )
-    used_lines += 1
-    print_dashboard_line(
-        "  ".join(
+        "   ".join(
             [
-                f"{BOLD}Logs:{NC} {options.cli_sim} logs startup",
-                f"{BOLD}Shell:{NC} {options.cli_sim} sh",
+                f"{DIM}rosbridge{NC} ws://localhost:9090",
+                f"{DIM}foxglove{NC} ws://localhost:{config['foxglove_port']}",
+                f"{DIM}logs{NC} {options.cli_sim} logs startup",
+                f"{DIM}shell{NC} {options.cli_sim} sh",
             ]
         ),
         term_width,
@@ -831,12 +671,6 @@ def render_status(
             print_dashboard_line(f"{BOLD}State dir:{NC} {options.state_dir}", term_width)
         return
 
-    if term_height - used_lines >= 12:
-        marquee_lines = render_robot_marquee(term_width)
-        for marquee_line in marquee_lines:
-            print(marquee_line)
-        used_lines += len(marquee_lines)
-
     if verbose:
         used_lines += 5
     available_height = max(term_height - used_lines, 0)
@@ -861,7 +695,6 @@ def render_status_text(
     options: DashboardOptions,
     *,
     verbose: bool = False,
-    history: DashboardHistory | None = None,
     snapshot: dict[str, object] | None = None,
     cached_logs: dict[str, list[str]] | None = None,
     reserved_top_rows: int = 0,
@@ -873,7 +706,6 @@ def render_status_text(
             callbacks,
             options,
             verbose=verbose,
-            history=history,
             clear=False,
             snapshot=snapshot,
             cached_logs=cached_logs,
@@ -954,7 +786,6 @@ def watch_dashboard(
     refresh_seconds: float = 0.5,
 ) -> str:
     redraw = True
-    history = DashboardHistory()
     top_padding_rows = 1
     try:
         with (
@@ -963,7 +794,6 @@ def watch_dashboard(
             dashboard_input_mode() as input_mode_enabled,
         ):
             snapshot, cached_logs, snapshot_rev, log_rev = runtime.read()
-            history.seed_from_snapshot(snapshot)
             last_snapshot_rev = snapshot_rev
             last_log_rev = log_rev
             next_refresh = 0.0
@@ -971,7 +801,6 @@ def watch_dashboard(
                 now = time.monotonic()
                 snapshot, cached_logs, snapshot_rev, log_rev = runtime.read()
                 if snapshot_rev != last_snapshot_rev:
-                    history.add(snapshot)
                     last_snapshot_rev = snapshot_rev
                     redraw = True
                 if log_rev != last_log_rev:
@@ -984,7 +813,6 @@ def watch_dashboard(
                             callbacks,
                             options,
                             verbose=verbose,
-                            history=history,
                             snapshot=snapshot,
                             cached_logs=cached_logs,
                             reserved_top_rows=top_padding_rows,

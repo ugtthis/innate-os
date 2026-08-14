@@ -90,7 +90,20 @@ def test_a_broken_compose_is_refused(version):
         runtime._refuse_broken_compose(f"Docker Compose version v{version}", f"{runtime.CLI_SIM} up")
     message = str(failure.value)
     assert f"Docker Compose {version} " in message
-    assert "docker-compose-plugin=" in message  # the remedy is a command, not a description
+    assert "curl" in message or "apt install" in message  # a command, not a description
+
+
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    # No package manages Compose on macOS -- Docker Desktop bundles it -- so
+    # the remedy there is a plugin binary, not a downgrade.
+    [("darwin", "~/.docker/cli-plugins"), ("linux", "docker-compose-plugin=")],
+)
+def test_the_compose_remedy_matches_the_host_platform(monkeypatch, platform, expected):
+    monkeypatch.setattr(runtime.sys, "platform", platform)
+    with pytest.raises(runtime.StackError) as failure:
+        runtime._refuse_broken_compose("Docker Compose version v5.3.1", f"{runtime.CLI_SIM} up")
+    assert expected in str(failure.value)
 
 
 @pytest.mark.parametrize("version", ["2.35.0", "2.40.3", "4.9.9"])

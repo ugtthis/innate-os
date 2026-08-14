@@ -31,11 +31,17 @@ INNATE_DIR="${INNATE_DIR:-$(pwd)/innate-os}"
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 DOCKER_INSTALL_URL="https://get.docker.com"
 GL_PACKAGES="libegl1 libgl1 libopengl0 libosmesa6"
-# Disk each step needs, in GB. Measured, not guessed: the OS image is 1.4 GB
-# compressed over 28 layers (~3.5 GB unpacked), the asset image 0.13 GB
-# compressed / 332 MB stored plus 450 MB extracted to sim/assets, the viewer
-# bundle ~1 MB, and the host uv environment 128 MB. The rest of the runtime
-# figure is the colcon build and ccache volumes.
+# Disk each step needs, in GB, measured on a full install rather than guessed:
+#
+#   OS image      6.73 GB unpacked (1.4 GB compressed over 28 layers)
+#   asset image   0.33 GB stored, plus 0.44 GB extracted to sim/assets
+#   viewer bundle ~0.00 GB
+#   host uv env   0.24 GB (sim/.venv)
+#   volumes       0.32 GB (ros2_ws build/install/log + ccache)
+#   checkout      0.90 GB including .git
+#
+# The image dominates: at 4.7x its compressed size it is most of the runtime
+# figure, while the colcon volumes are a rounding error.
 DISK_GB_DOCKER=2
 DISK_GB_UV=1
 DISK_GB_RENDER=1

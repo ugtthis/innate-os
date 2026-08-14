@@ -31,6 +31,7 @@ MIN_FREE_GB=20
 DOCKER_WAIT_S=180
 LOG_FILE="${INNATE_INSTALL_LOG:-$HOME/.innate-install.log}"
 VERBOSE="${INNATE_VERBOSE:-0}"
+LOG_TAIL_ROWS=3
 
 PLATFORM=""
 TMPDIR_INSTALL=""
@@ -38,6 +39,8 @@ NEED_RELOGIN=0
 INTERACTIVE=0
 PLAN=""
 SUDO_PRIMED=0
+STEP_ACTIVE=0
+step_pid=""
 
 # Package managers ask questions no unattended install can answer, and
 # needrestart prints a service-restart audit nobody asked for.
@@ -95,17 +98,72 @@ step() {
 
     "$@" >>"$LOG_FILE" 2>&1 &
     step_pid=$!
+    STEP_ACTIVE=1
     step_n=0
     while kill -0 "$step_pid" 2>/dev/null; do
-        printf '\r\033[K  %s%8s%s  %s %s' "$CYAN" "$step_label" "$NC" "$(spinner_frame "$step_n")" "$step_msg"
+        # Elapsed from the frame count: this loop spawns enough processes per
+        # second already without a `date` in it.
+        draw_step_frame "$(spinner_frame "$step_n")" "$((step_n * 12 / 100))"
         step_n=$((step_n + 1))
-        sleep 0.1
+        sleep 0.12
     done
+    erase_step_frame
+    STEP_ACTIVE=0
     if ! wait "$step_pid"; then
-        printf '\r\033[K'
         return 1
     fi
-    printf '\r\033[K  %s%8s%s  %s✔%s %s\n' "$CYAN" "$step_label" "$NC" "$GREEN" "$NC" "$step_msg"
+    printf '  %s%8s%s  %s✔%s %s\n' "$CYAN" "$step_label" "$NC" "$GREEN" "$NC" "$step_msg"
+}
+
+# The status line plus the tail of the log, so a long step shows its work
+# rather than a spinner that cannot be told apart from a hang. Always the same
+# number of rows, so the cursor can be walked back over them.
+draw_step_frame() {
+    frame_width=$(terminal_width)
+    frame_room=$((frame_width - 20))
+    printf '\033[K  %s%8s%s  %s %s  %s%ss%s\n' \
+        "$CYAN" "$step_label" "$NC" "$1" "$(printf '%s' "$step_msg" | cut -c "1-$frame_room")" "$DIM" "$2" "$NC"
+    tail -n "$LOG_TAIL_ROWS" "$LOG_FILE" 2>/dev/null | tr -d '\r' | cut -c "1-$frame_room" >"$TMPDIR_INSTALL/tail"
+    tail_row=0
+    while IFS= read -r tail_line; do
+        printf '\033[K  %s%8s  │ %s%s\n' "$DIM" "" "$tail_line" "$NC"
+        tail_row=$((tail_row + 1))
+    done <"$TMPDIR_INSTALL/tail"
+    while [ "$tail_row" -lt "$LOG_TAIL_ROWS" ]; do
+        printf '\033[K\n'
+        tail_row=$((tail_row + 1))
+    done
+    printf '\033[%dA\r' "$((LOG_TAIL_ROWS + 1))"
+}
+
+erase_step_frame() {
+    erase_row=0
+    while [ "$erase_row" -le "$LOG_TAIL_ROWS" ]; do
+        printf '\033[K\n'
+        erase_row=$((erase_row + 1))
+    done
+    printf '\033[%dA\r' "$((LOG_TAIL_ROWS + 1))"
+}
+
+# From the terminal itself (fd 3), not tput: with stdout on a pipe or inside a
+# command substitution, tput reports terminfo's static 80 rather than the real
+# width, and a status line wider than the terminal wraps -- which desynchronises
+# every cursor-up the frame relies on.
+terminal_width() {
+    width=""
+    if [ "$INTERACTIVE" -eq 1 ]; then
+        width=$(stty size <&3 2>/dev/null | awk '{print $2}')
+    fi
+    if [ -z "$width" ]; then
+        width=$(tput cols 2>/dev/null || printf '80')
+    fi
+    case "$width" in
+        '' | *[!0-9]*) width=80 ;;
+    esac
+    if [ "$width" -lt 40 ]; then
+        width=80
+    fi
+    printf '%s' "$width"
 }
 
 # Privileged steps run in the background, where a password prompt would hang
@@ -122,9 +180,23 @@ prime_sudo() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# Invoked by the trap in main, which shellcheck does not trace
+# Invoked by the traps in main, which shellcheck does not trace
 # shellcheck disable=SC2329
 cleanup() { [ -n "$TMPDIR_INSTALL" ] && rm -rf "$TMPDIR_INSTALL"; }
+
+# A trap that only cleans up is not an interrupt handler: the shell resumes
+# where it left off, so Ctrl+C would delete the temp dir and carry on
+# installing. Stop the step's child, put the cursor back, and leave.
+on_interrupt() {
+    trap '' INT TERM
+    if [ "$STEP_ACTIVE" -eq 1 ]; then
+        kill "$step_pid" 2>/dev/null || true
+        erase_step_frame
+        STEP_ACTIVE=0
+    fi
+    printf '\n  %s%8s%s  interrupted; nothing else was installed\n' "$YELLOW" "stopped" "$NC" >&2
+    exit 130
+}
 
 as_root() {
     if [ "$(id -u)" -eq 0 ]; then
@@ -306,11 +378,20 @@ install_docker_linux() {
     as_root sh "$TMPDIR_INSTALL/get-docker.sh"
     if [ "$(id -u)" -ne 0 ]; then
         as_root usermod -aG docker "$(id -un)"
-        # A new group only reaches processes started after it is granted, so
-        # this shell -- and everything the installer still wants to run --
-        # cannot use the Docker socket yet.
-        NEED_RELOGIN=1
     fi
+}
+
+# A new group only reaches processes started after it is granted, so this
+# shell cannot use the Docker socket yet. Read from the group database rather
+# than a variable: the install runs inside step()'s background subshell, whose
+# assignments never reach this one. `id -nG <user>` queries the database,
+# `id -nG` reports this process's own credentials -- the difference IS the
+# pending grant.
+docker_group_pending() {
+    [ "$(id -u)" -eq 0 ] && return 1
+    id -nG "$(id -un)" 2>/dev/null | tr ' ' '\n' | grep -qx docker || return 1
+    id -nG 2>/dev/null | tr ' ' '\n' | grep -qx docker && return 1
+    return 0
 }
 
 ensure_docker() {
@@ -323,7 +404,11 @@ ensure_docker() {
         fi
     fi
 
-    [ "$NEED_RELOGIN" -eq 1 ] && return 0
+    if docker_group_pending; then
+        NEED_RELOGIN=1
+        note "added you to the docker group"
+        return 0
+    fi
     if ! step "docker" "daemon running" start_docker_daemon; then
         if [ "$PLATFORM" = "macos" ]; then
             die "Docker Desktop did not finish starting within ${DOCKER_WAIT_S}s. Open it, wait for it to settle, then rerun this command."
@@ -471,7 +556,8 @@ report_next_steps() {
 
 main() {
     TMPDIR_INSTALL=$(mktemp -d)
-    trap cleanup EXIT INT TERM
+    trap cleanup EXIT
+    trap on_interrupt INT TERM
 
     : >"$LOG_FILE" 2>/dev/null || LOG_FILE="$TMPDIR_INSTALL/install.log"
     attach_terminal

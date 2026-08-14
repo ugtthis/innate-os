@@ -1032,10 +1032,13 @@ report_blocked() {
     printf '\n'
     labelled "blocked" "$YELLOW" "$BLOCKED_REASON"
     printf '\n'
-    printf '  %s%8s%s  when that is done:\n\n' "$BOLD" "next" "$NC"
+    # The installer, not `innate-sim setup`: a Docker installed by hand brings
+    # its own Compose, which may be a 5.x that cannot mount the sim's assets --
+    # setup would only refuse it, while this fixes it and carries on.
+    printf '  %s%8s%s  when that is done, run this again:\n\n' "$BOLD" "next" "$NC"
     printf '  %8s  cd %s\n' "" "$(display_path "$INNATE_DIR")"
-    printf '  %8s  ./innate-sim setup\n\n' ""
-    note "everything else is installed and the checkout is ready"
+    printf '  %8s  sh scripts/install-sim.sh\n\n' ""
+    note "everything else is installed and the checkout is ready, so it will be quick"
     printf '\n'
 }
 

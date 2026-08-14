@@ -197,30 +197,6 @@ step() {
     printf '  %s%8s%s  %s✔%s %s\n' "$CYAN" "$step_label" "$NC" "$GREEN" "$NC" "$step_done"
 }
 
-# For work that prompts, or runs for minutes: no spinner, no cursor
-# arithmetic, output straight to the terminal and the log. A drawn frame
-# assumes it is the only thing writing to the screen, which a tool asking for
-# a password -- or one that writes to /dev/tty behind our redirection -- is
-# not. Slower to read, impossible to desynchronise.
-step_streamed() {
-    step_label=$1
-    step_msg=$2
-    step_done=$3
-    shift 3
-    say "$step_label" "$step_msg"
-    # The terminal itself, not a pipe: a pipe would make this command's stdout
-    # a block-buffered file, so a ten-minute install would show nothing for
-    # minutes and then a wall of it -- which is exactly what a live view is
-    # for. The cost is that its output goes to the screen only; a failure here
-    # has already printed its reason there.
-    step_started=$(date +%s 2>/dev/null || echo 0)
-    "$@" || return 1
-    step_elapsed=$(($(date +%s 2>/dev/null || echo 0) - step_started))
-    printf '  %s%8s%s  %s✔%s %s %s(%sm%02ds)%s\n' \
-        "$CYAN" "$step_label" "$NC" "$GREEN" "$NC" "$step_done" \
-        "$DIM" "$((step_elapsed / 60))" "$((step_elapsed % 60))" "$NC"
-}
-
 # The status line plus the tail of the log, so a long step shows its work
 # rather than a spinner that cannot be told apart from a hang. Always the same
 # number of rows, so the cursor can be walked back over them.
@@ -569,7 +545,9 @@ build_plan() {
     have git || plan_add "Install git (with your package manager)" 1
     have docker || {
         if [ "$PLATFORM" = "macos" ]; then
-            plan_add "Install Docker Desktop (Homebrew cask)" "$DISK_GB_DOCKER"
+            # Said before they confirm, so "install Docker yourself" is not a
+            # surprise three screens later.
+            plan_add "Point you at Docker Desktop, which macOS needs you to install yourself" 0
         else
             plan_add "Install Docker Engine + Compose (from $DOCKER_INSTALL_URL, needs sudo)" "$DISK_GB_DOCKER"
         fi
@@ -645,7 +623,7 @@ ensure_git() {
 start_docker_daemon() {
     docker info >/dev/null 2>&1 && return 0
     if [ "$PLATFORM" = "macos" ]; then
-        open --background -a Docker >/dev/null 2>&1 || true
+        open -a Docker >/dev/null 2>&1 || true
     elif have systemctl; then
         as_root systemctl start docker >/dev/null 2>&1 || true
     else
@@ -660,12 +638,6 @@ start_docker_daemon() {
         waited=$((waited + 3))
     done
     return 1
-}
-
-install_docker_macos() {
-    # The cask was renamed docker -> docker-desktop; accept either, so this
-    # works on both old and new Homebrew.
-    brew install --cask docker-desktop || brew install --cask docker
 }
 
 install_docker_linux() {
@@ -699,40 +671,29 @@ docker_group_pending() {
 # rather than setting a variable this shell would never see.
 docker_group_granted_here() { [ -f "$TMPDIR_INSTALL/docker-group-granted" ]; }
 
-# Docker Desktop is the only Docker macOS has: get.docker.com is a Linux
-# package installer and refuses on Darwin, because containers need a Linux VM
-# and Desktop is the VM. So this is an app install, with an app's licence.
-offer_docker_desktop() {
-    macos_manual="Get it from https://docs.docker.com/desktop/install/mac-install/, open it once, then rerun this installer."
-    if ! have brew; then
-        blocked "Docker Desktop is not installed, and Homebrew is not here to install it.
-$macos_manual"
-        return 1
+# macOS has no headless Docker: containers are Linux processes, so they need
+# the VM that Docker Desktop provides, and installing it means a licence to
+# accept, a privileged helper to authorise and a first launch to sit through.
+# Homebrew can fetch it, but not finish it -- so this points at the download
+# and gets out of the way rather than automating the half that can be.
+require_docker_desktop() {
+    if [ -d "/Applications/Docker.app" ]; then
+        blocked "Docker Desktop is installed, but its command-line tools are not on PATH.
+Open Docker Desktop once -- it installs them and asks you to accept its terms --
+then run this installer again."
+    else
+        blocked "Docker Desktop is not installed, and macOS needs it: containers are Linux
+processes, so they run inside the VM it provides.
+Download it: https://docs.docker.com/desktop/install/mac-install/
+Install it, open it once and accept its terms, then run this installer again."
     fi
-    printf '\n'
-    note "Homebrew can install Docker Desktop: about 1.5 GB, and macOS will ask for"
-    note "your password to link its command-line tools."
-    note "Docker Desktop is free for personal use and small businesses; larger"
-    note "companies need a paid subscription."
-    printf '\n'
-    if ! confirm "  Install Docker Desktop with Homebrew?"; then
-        blocked "Docker Desktop was not installed.
-$macos_manual"
-        return 1
-    fi
-    printf '\n'
-    # Before the step, never inside it: brew needs sudo for the /usr/local
-    # links, and a password prompt under a spinner is a hang with no message.
-    prime_sudo
-    note "Homebrew's output follows -- it takes a few minutes, and it is not stuck"
-    step_streamed "docker" "Installing Docker Desktop" "Docker Desktop installed" install_docker_macos ||
-        die "Could not install Docker Desktop. Details: $LOG_FILE"
+    return 1
 }
 
 ensure_docker() {
     if ! have docker; then
         if [ "$PLATFORM" = "macos" ]; then
-            offer_docker_desktop || return 0
+            require_docker_desktop || return 0
         else
             prime_sudo
             step "docker" "Installing Docker Engine + Compose" "Docker Engine + Compose installed" install_docker_linux || die "Could not install Docker."
@@ -750,12 +711,13 @@ ensure_docker() {
         return 0
     fi
     if [ "$PLATFORM" = "macos" ] && ! docker info >/dev/null 2>&1; then
-        note "starting Docker Desktop -- accept its terms if a window asks you to"
+        note "opening Docker Desktop -- accept its terms if it asks, and leave it running"
     fi
     if ! step "docker" "Starting the Docker daemon" "Docker daemon running" start_docker_daemon; then
         if [ "$PLATFORM" = "macos" ]; then
             die "Docker Desktop did not finish starting within ${DOCKER_WAIT_S}s.
-It may be waiting for you to accept its terms -- check the Docker window, then rerun this installer."
+Its window should be in front of you -- accept the terms if it is asking, wait for the
+whale icon to settle, then run this installer again."
         fi
         die "The Docker daemon is installed but did not start. Start it (sudo systemctl start docker) and rerun this command."
     fi

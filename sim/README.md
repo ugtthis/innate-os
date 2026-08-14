@@ -18,11 +18,15 @@ anything you build against the simulator works unchanged on a real MARS.
 curl -fsSL https://link.innate.bot/sim | sh
 ```
 
-That is the whole install on macOS, Linux and WSL2: it asks before installing
-anything missing (Docker, uv, git, the Linux rendering libraries), clones this
+That is the whole install on Linux and WSL2: it asks before installing
+anything missing (Docker, uv, git, the rendering libraries), clones this
 repository into `innate-os/` in the directory you run it from, asks how the
 agent should reach a cloud LLM, and downloads the runtime — so the first
-`./innate-sim up` is a start, not a download. Then:
+`./innate-sim up` is a start, not a download.
+
+**On macOS, install [Docker
+Desktop](https://docs.docker.com/desktop/install/mac-install/) first** and open
+it once; the installer handles everything after that. Then:
 
 ```bash
 cd innate-os && ./innate-sim up
@@ -56,13 +60,13 @@ downloads a few GB, so it takes a while; later starts take seconds.
 <details>
 <summary><b>macOS</b></summary>
 
-Install Docker Desktop and start it:
+Install [Docker Desktop](https://docs.docker.com/desktop/install/mac-install/)
+and open it once to accept its terms. macOS has no headless Docker: containers
+are Linux processes, so they run inside the VM Docker Desktop provides.
 
-```bash
-brew install --cask docker
-```
-
-(or download it from [docker.com](https://docs.docker.com/get-started/get-docker/)).
+The installer does not do this one for you — a desktop app with a licence to
+agree to and a first launch to sit through is not something a shell script can
+finish — so it checks, and says so if it is missing.
 
 </details>
 

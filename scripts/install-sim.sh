@@ -7,8 +7,8 @@
 #     curl -fsSL https://link.innate.bot/sim | sh
 #
 # It lives here so it can be read before it is piped to a shell, and so it
-# versions with the thing it installs. If you are reading this in a checkout
-# you already have, this script is not for you: run `./innate-sim setup`.
+# versions with the thing it installs. Run from inside a checkout you already
+# have, it sets that one up rather than cloning another.
 #
 # Installs whatever is missing (Docker, uv, git, the Linux rendering
 # libraries), clones innate-os, and hands over to `./innate-sim setup`, which
@@ -71,6 +71,7 @@ SUDO_PRIMED=0
 STEP_ACTIVE=0
 step_pid=""
 DOCKER_BROKEN=0
+ADOPTED_CHECKOUT=0
 
 # Package managers ask questions no unattended install can answer, and
 # needrestart prints a service-restart audit nobody asked for.
@@ -265,6 +266,8 @@ prime_sudo() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+is_git_checkout() { git -C "$1" rev-parse --git-dir >/dev/null 2>&1; }
+
 # A blinking cursor parked after the last thing drawn reads as an unanswered
 # text prompt. cleanup() restores it, so no exit path can leave it hidden.
 hide_cursor() {
@@ -456,14 +459,21 @@ Run these two commands:
     # makes that a real possibility, since a piped installer runs wherever the
     # terminal happened to be.
     if [ "$INNATE_DIR_EXPLICIT" -eq 0 ] && have git && enclosing=$(git rev-parse --show-toplevel 2>/dev/null); then
-        # This script's whole job is to produce a checkout, so running it from
-        # inside one is a misunderstanding worth answering rather than refusing.
+        # Cloning first and looking for the simulator afterwards is a normal
+        # way to arrive. The clone is then the only step that does not apply --
+        # Docker, uv, the rendering libraries and the version checks all still
+        # do, and `innate-sim setup` performs none of them.
         if [ -x "$enclosing/innate-sim" ]; then
-            die "$enclosing is already an innate-os checkout -- this installer only clones one. You want: cd $enclosing && ./innate-sim setup"
+            INNATE_DIR=$enclosing
+            ADOPTED_CHECKOUT=1
+        else
+            die "$(pwd) is inside a git repository, so the simulator would be a checkout within a checkout. cd somewhere else, or set INNATE_DIR to where it should live."
         fi
-        die "$(pwd) is inside a git repository, so the simulator would be a checkout within a checkout. cd somewhere else, or set INNATE_DIR to where it should live."
     fi
-    if [ -d "$INNATE_DIR" ] && [ ! -d "$INNATE_DIR/.git" ] && [ -n "$(ls -A "$INNATE_DIR" 2>/dev/null)" ]; then
+    if [ "$ADOPTED_CHECKOUT" -eq 0 ] &&
+        [ -d "$INNATE_DIR" ] &&
+        ! is_git_checkout "$INNATE_DIR" &&
+        [ -n "$(ls -A "$INNATE_DIR" 2>/dev/null)" ]; then
         die "$INNATE_DIR already exists and is not an innate-os checkout. Move it aside, or set INNATE_DIR."
     fi
 
@@ -495,7 +505,9 @@ build_plan() {
     if [ "$PLATFORM" != "macos" ] && have apt-get; then
         plan_add "Install the rendering libraries: $GL_PACKAGES (needs sudo)" "$DISK_GB_RENDER"
     fi
-    if [ -d "$INNATE_DIR/.git" ]; then
+    if [ "$ADOPTED_CHECKOUT" -eq 1 ]; then
+        plan_add "Set up the innate-os checkout you are in ($INNATE_DIR)" 0
+    elif is_git_checkout "$INNATE_DIR"; then
         plan_add "Update the innate-os checkout in $INNATE_DIR" 0
     else
         plan_add "Clone innate-os ($REF) into $INNATE_DIR" "$DISK_GB_CLONE"
@@ -820,7 +832,13 @@ clone_checkout() {
 }
 
 clone_repo() {
-    if [ -d "$INNATE_DIR/.git" ]; then
+    # Never touch a checkout the user brought: they chose that branch, and an
+    # installer is not the place to move it.
+    if [ "$ADOPTED_CHECKOUT" -eq 1 ]; then
+        note "using $INNATE_DIR at $(git -C "$INNATE_DIR" rev-parse --short HEAD)"
+        return 0
+    fi
+    if is_git_checkout "$INNATE_DIR"; then
         step "repo" "Updating $INNATE_DIR" "updated $INNATE_DIR" update_checkout || die "Could not update $INNATE_DIR."
     else
         git ls-remote --exit-code --heads "$REPO_URL" "$REF" >/dev/null 2>&1 ||

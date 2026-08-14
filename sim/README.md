@@ -30,6 +30,16 @@ cd innate-os && ./innate-sim up
 
 Set `INNATE_DIR` to put the checkout somewhere else.
 
+**Already cloned this repository?** Run the same script from inside it — it
+skips the clone and sets up the checkout you have:
+
+```bash
+sh scripts/install-sim.sh
+```
+
+`./innate-sim setup` does the same *last* step on its own, but installs no
+prerequisites: use it when Docker and uv are already in place.
+
 Prefer to do it yourself? The rest of this section is the same setup by hand.
 
 You need two tools installed; everything else (world geometry, the Docker

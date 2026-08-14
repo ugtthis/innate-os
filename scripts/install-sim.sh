@@ -201,39 +201,36 @@ step() {
 # rather than a spinner that cannot be told apart from a hang. Always the same
 # number of rows, so the cursor can be walked back over them.
 draw_step_frame() {
-    # Measured once per step, in step(): this runs eight times a second, and
-    # a terminal resized mid-step costs one slightly-wrong frame.
     frame_width=$STEP_WIDTH
     # "  " + 8 label + "  " + spinner + " " = 14 before the message, then
     # "  " + elapsed + "s" after it; the log rows spend 14 on "  " + 8 + "  | ".
     frame_room=$((frame_width - 18 - ${#2}))
     tail_room=$((frame_width - 15))
-    # \033[J first: clear from here to the end of the screen, so the frame is
-    # rebuilt rather than accumulated. Anything that wrote to the terminal
-    # without going through us -- a sudo prompt, a tool writing to /dev/tty --
-    # shifts the cursor, and a frame that only counts rows would then append a
-    # copy of itself on every redraw instead of overwriting the last one.
-    printf '\r\033[J'
-    printf '\033[K  %s%8s%s  %s %s  %s%ss%s\n' \
-        "$CYAN" "$step_label" "$NC" "$1" "$(printf '%s' "$step_msg" | cut -c "1-$frame_room")" "$DIM" "$2" "$NC"
-    # Tabs and colour codes are what a package manager actually emits, and
-    # both lie about width: cut counts a tab as one character while the
-    # terminal spends up to eight columns on it, and an escape sequence is
-    # counted but occupies none. Either way the row stops fitting, wraps, and
-    # every redraw leaves the last one behind.
     tail -n "$LOG_TAIL_ROWS" "$LOG_FILE" 2>/dev/null |
         tr -d '\r' | tr '\t' ' ' | sed "s/$(printf '\033')\[[0-9;]*[A-Za-z]//g" |
         cut -c "1-$tail_room" >"$TMPDIR_INSTALL/tail"
-    tail_row=0
-    while IFS= read -r tail_line; do
-        printf '\033[K  %s%8s  │ %s%s\n' "$DIM" "" "$tail_line" "$NC"
-        tail_row=$((tail_row + 1))
-    done <"$TMPDIR_INSTALL/tail"
-    while [ "$tail_row" -lt "$LOG_TAIL_ROWS" ]; do
-        printf '\033[K\n'
-        tail_row=$((tail_row + 1))
-    done
-    printf '\033[%dA\r' "$((LOG_TAIL_ROWS + 1))"
+
+    # Built whole, written once. Clearing and drawing in separate writes leaves
+    # the region blank for as long as the terminal takes to paint the next one,
+    # which on Windows Terminal (WSL) is long enough to read as flicker; in one
+    # write there is no intermediate state to see.
+    frame=$(
+        printf '\r\033[J'
+        printf '\033[K  %s%8s%s  %s %s  %s%ss%s\n' \
+            "$CYAN" "$step_label" "$NC" "$1" "$(printf '%s' "$step_msg" | cut -c "1-$frame_room")" \
+            "$DIM" "$2" "$NC"
+        tail_row=0
+        while IFS= read -r tail_line; do
+            printf '\033[K  %s%8s  │ %s%s\n' "$DIM" "" "$tail_line" "$NC"
+            tail_row=$((tail_row + 1))
+        done <"$TMPDIR_INSTALL/tail"
+        while [ "$tail_row" -lt "$LOG_TAIL_ROWS" ]; do
+            printf '\033[K\n'
+            tail_row=$((tail_row + 1))
+        done
+        printf 'X' # sentinel: $( ) strips trailing newlines, and the last one counts
+    )
+    printf '%s\033[%dA\r' "${frame%X}" "$((LOG_TAIL_ROWS + 1))"
 }
 
 erase_step_frame() {

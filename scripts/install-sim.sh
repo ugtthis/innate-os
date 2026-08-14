@@ -387,6 +387,8 @@ with_tty() {
 
 # Control characters as values, since a case pattern cannot hold an escape.
 ESC=$(printf '\033')
+BACKSPACE=$(printf '\177')
+DELETE=$(printf '\010')
 CR=$(printf '\rX')
 CR=${CR%X}
 ETX=$(printf '\003')
@@ -550,22 +552,13 @@ uv_installed() {
     have uv || [ -x "$HOME/.local/bin/uv" ] || [ -x "$HOME/.cargo/bin/uv" ]
 }
 
+# Listed in the order main() does them, which is the order the reader will
+# watch happen. Keep the two in step: a plan that promises Docker before the
+# clone tells someone their key is collected before the checkout exists.
 build_plan() {
     find_docker_cli || true
     have git || plan_add "Install git (with your package manager)" 1
-    have docker || {
-        if [ "$PLATFORM" = "macos" ]; then
-            # Said before they confirm, so "install Docker yourself" is not a
-            # surprise three screens later.
-            plan_add "Point you at Docker Desktop, which macOS needs you to install yourself" 0
-        else
-            plan_add "Install Docker Engine + Compose (from $DOCKER_INSTALL_URL, needs sudo)" "$DISK_GB_DOCKER"
-        fi
-    }
     uv_installed || plan_add "Install uv, which runs the physics world (user-local, no sudo)" "$DISK_GB_UV"
-    if [ "$PLATFORM" != "macos" ] && have apt-get; then
-        plan_add "Install the rendering libraries: $GL_PACKAGES (needs sudo)" "$DISK_GB_RENDER"
-    fi
     if [ "$ADOPTED_CHECKOUT" -eq 1 ]; then
         plan_add "Set up the innate-os checkout you are in ($INNATE_DIR)" 0
     elif is_git_checkout "$INNATE_DIR"; then
@@ -573,9 +566,18 @@ build_plan() {
     else
         plan_add "Clone innate-os ($REF) into $INNATE_DIR" "$DISK_GB_CLONE"
     fi
-    # Two entries because they are now two phases: the question comes right
-    # after the clone, and everything slow happens after you have answered it.
+    # Answered here, into <checkout>/.env, which is why the clone comes first.
     plan_add "Ask how the agent reaches a cloud LLM" 0
+    have docker || {
+        if [ "$PLATFORM" = "macos" ]; then
+            plan_add "Point you at Docker Desktop, which macOS needs you to install yourself" 0
+        else
+            plan_add "Install Docker Engine + Compose (from $DOCKER_INSTALL_URL, needs sudo)" "$DISK_GB_DOCKER"
+        fi
+    }
+    if [ "$PLATFORM" != "macos" ] && have apt-get; then
+        plan_add "Install the rendering libraries: $GL_PACKAGES (needs sudo)" "$DISK_GB_RENDER"
+    fi
     plan_add "Download the simulator, so the first start is a start" "$DISK_GB_RUNTIME"
 }
 
@@ -858,9 +860,119 @@ exec_in_docker_group() {
 # Asked while the user is still at the keyboard, right after the clone, so
 # everything slow that follows can run unattended. Needs the checkout (the
 # wizard lives in the launcher) and uv (which supplies the Python it runs on).
+# The cloud-LLM question, asked before anything is installed -- so the answer
+# arrives in the first ten seconds rather than after apt, uv and a clone.
+#
+# Only the ANSWER is collected here. Which key goes into .env, and which get
+# commented out, stays in the launcher's wizard (setup_wizard.apply_brain_backend)
+# so that lives in one place. The key reaches it on stdin: never a temp file,
+# never an environment a process listing can show.
+LLM_BACKEND=""
+LLM_KEY=""
+
+draw_llm_options() {
+    llm_row=0
+    for llm_label in "Your own Gemini key   get one at https://aistudio.google.com/api-keys" \
+        "Innate service key    from your robot, or ask on https://discord.gg/innate" \
+        "None                  run the simulator without an agent"; do
+        llm_row=$((llm_row + 1))
+        if [ "$llm_row" -eq "$1" ]; then
+            printf '\r\033[K  %s●%s %s%s%s\n' "$GREEN" "$NC" "$BOLD" "$llm_label" "$NC"
+        else
+            printf '\r\033[K  %s○ %s%s\n' "$DIM" "$llm_label" "$NC"
+        fi
+    done
+}
+
+ask_llm_backend() {
+    if [ "$INTERACTIVE" -eq 0 ]; then
+        LLM_BACKEND=""
+        return 0
+    fi
+    printf '\n  %sHow should the robot'"'"'s agent reach a cloud LLM?%s\n' "$BOLD" "$NC"
+    printf '  %sThe agent runs on the robot either way; this is only which key it thinks with.%s\n\n' "$DIM" "$NC"
+
+    llm_choice=1
+    if ! stty_saved=$(stty -g <&3 2>/dev/null); then
+        # No raw mode: the launcher asks its own way, after the clone.
+        LLM_BACKEND=""
+        return 0
+    fi
+    stty raw -echo <&3
+    hide_cursor
+    llm_redraw=0
+    while :; do
+        [ "$llm_redraw" -eq 1 ] && printf '\033[3A'
+        draw_llm_options "$llm_choice"
+        llm_redraw=1
+        read_key
+        case "$key" in
+            up | k) llm_choice=$(((llm_choice + 1) % 3 + 1)) ;;
+            down | j) llm_choice=$((llm_choice % 3 + 1)) ;;
+            1 | 2 | 3) llm_choice=$key ;;
+            interrupt)
+                stty "$stty_saved" <&3
+                show_cursor
+                printf '\r\n'
+                on_interrupt
+                ;;
+            enter) break ;;
+        esac
+    done
+    stty "$stty_saved" <&3
+    show_cursor
+
+    case "$llm_choice" in
+        1) LLM_BACKEND=gemini ;;
+        2) LLM_BACKEND=innate ;;
+        *) LLM_BACKEND=none ;;
+    esac
+    [ "$LLM_BACKEND" = "none" ] && return 0
+    read_llm_key
+}
+
+# Masked, with a length counter: a paste that silently doubled is the failure
+# worth showing, and the key itself never belongs on screen.
+read_llm_key() {
+    [ "$LLM_BACKEND" = "gemini" ] && llm_prompt="Paste your Gemini API key" || llm_prompt="Paste your Innate service key"
+    stty_saved=$(stty -g <&3)
+    stty raw -echo <&3
+    hide_cursor
+    LLM_KEY=""
+    while :; do
+        printf '\r\033[K  %s%s: %s%s' "$YELLOW" "$llm_prompt" "$NC" "$(printf '%*s' "${#LLM_KEY}" '' | tr ' ' '*')"
+        [ -n "$LLM_KEY" ] && printf ' %s(%s)%s' "$DIM" "${#LLM_KEY}" "$NC"
+        read_key
+        case "$key" in
+            enter) [ -n "$LLM_KEY" ] && break ;;
+            interrupt)
+                stty "$stty_saved" <&3
+                show_cursor
+                printf '\r\n'
+                on_interrupt
+                ;;
+            escape | up | down | left | right) ;;
+            "$BACKSPACE" | "$DELETE") LLM_KEY=${LLM_KEY%?} ;;
+            *) LLM_KEY="$LLM_KEY$key" ;;
+        esac
+    done
+    stty "$stty_saved" <&3
+    show_cursor
+    printf '\r\033[K  %s%s: %s%s %s(%s)%s\n' "$YELLOW" "$llm_prompt" "$NC" \
+        "$(printf '%*s' "${#LLM_KEY}" '' | tr ' ' '*')" "$DIM" "${#LLM_KEY}" "$NC"
+}
+
 ask_setup_questions() {
     printf '\n'
-    if with_docker_group_or_plain "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup --no-prefetch"; then
+    if [ -n "$LLM_BACKEND" ]; then
+        # Already answered, before anything was installed. The launcher writes
+        # .env; the key travels down a pipe between our two processes.
+        if printf '%s' "$LLM_KEY" |
+            sh -c "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup --no-prefetch --backend $LLM_BACKEND"; then
+            LLM_KEY=""
+            return 0
+        fi
+    elif with_docker_group_or_plain "cd $(shell_quote "$INNATE_DIR") && $BANNER_SHOWN ./innate-sim setup --no-prefetch"; then
         return 0
     fi
     die "Could not save your key (see above). Fix the problem, then rerun:
@@ -1099,6 +1211,7 @@ main() {
     # Questions first: git, uv and the clone are quick and silent, and the
     # wizard needs all three. Everything that can prompt -- sudo included --
     # is asked before the downloads rather than in the middle of them.
+    ask_llm_backend
     prime_sudo_if_needed
     ensure_git
     ensure_uv

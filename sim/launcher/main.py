@@ -64,7 +64,9 @@ from runtime import (
     world_server_running,
 )
 from setup_wizard import (
+    BRAIN_BACKENDS,
     _prompt_yes_no,
+    apply_brain_backend,
     configure_brain_backend,
     ensure_uv_prerequisite,
     is_interactive_terminal,
@@ -275,7 +277,13 @@ def cmd_logs(target: str, lines: int | None = None) -> None:
     print(tail_file(path, limit=lines or 120))
 
 
-def cmd_setup(config: dict[str, object], *, prefetch: bool = True, configure: bool = True) -> None:
+def cmd_setup(
+    config: dict[str, object],
+    *,
+    prefetch: bool = True,
+    configure: bool = True,
+    backend: str | None = None,
+) -> None:
     """Ask which key the agent thinks with, then download what `up` would.
 
     The two halves are separable because the installer asks everything before
@@ -284,7 +292,11 @@ def cmd_setup(config: dict[str, object], *, prefetch: bool = True, configure: bo
     place -- by which time nobody has to be watching.
     """
     print_banner()
-    if configure:
+    if backend:
+        # The installer asked before it installed anything; the key arrives on
+        # stdin so it never becomes a temp file or an entry in `ps`.
+        apply_brain_backend(config, backend, sys.stdin.read().strip() if backend != "none" else "")
+    elif configure:
         configure_brain_backend(config)
     if prefetch:
         ensure_docker_available(command_hint=f"{CLI_SIM} setup")
@@ -309,6 +321,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-prefetch",
         action="store_true",
         help="Configure keys only; leave the images and assets for the first `up` to download",
+    )
+    setup_parser.add_argument(
+        "--backend",
+        choices=BRAIN_BACKENDS,
+        help="Apply a cloud-LLM choice made elsewhere, reading the key from stdin (used by the installer)",
     )
     setup_parser.add_argument(
         "--prefetch-only",
@@ -398,7 +415,12 @@ def main() -> int:
         config = get_config()
 
         if args.sim_command == "setup":
-            cmd_setup(config, prefetch=not args.no_prefetch, configure=not args.prefetch_only)
+            cmd_setup(
+                config,
+                prefetch=not args.no_prefetch,
+                configure=not args.prefetch_only,
+                backend=args.backend,
+            )
         elif args.sim_command == "up":
             cmd_up(
                 config,

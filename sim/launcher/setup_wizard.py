@@ -383,6 +383,29 @@ def report_configured_keys(config: dict[str, object]) -> None:
         warn(f"No brain keys set in {ENV_PATH.name}.")
 
 
+BRAIN_BACKENDS = ("gemini", "innate", "none")
+
+
+def apply_brain_backend(config: dict[str, object], backend: str, key: str) -> None:
+    """Write a choice someone already made, without asking again.
+
+    The installer collects this before it installs anything, so the question
+    lands in the first ten seconds rather than after apt, uv and a clone. It
+    collects the answer only -- which key goes in .env, and which get commented
+    out, stays here, so there is one implementation of that.
+    """
+    if backend == "gemini":
+        _save_gemini_key(config, key)
+        _disable_keys(config, [INNATE_SERVICE_KEY])
+    elif backend == "innate":
+        _save_service_key(config, key)
+        _disable_keys(config, [GEMINI_API_KEY])
+    else:
+        _disable_keys(config, [GEMINI_API_KEY, INNATE_SERVICE_KEY])
+        warn("No brain backend selected. The sim will run without an agent.")
+    report_configured_keys(config)
+
+
 def configure_brain_backend(config: dict[str, object]) -> None:
     """Pick how the robot's brain reaches Gemini, and collect the matching key.
 

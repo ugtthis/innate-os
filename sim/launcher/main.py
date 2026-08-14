@@ -33,6 +33,7 @@ from dashboard import (
     NC,
     DashboardCallbacks,
     DashboardOptions,
+    live_step,
     print_banner,
     print_status,
     watch_dashboard,
@@ -128,20 +129,25 @@ def cmd_up(
             log("Offline: skipping sim/skill asset downloads.")
         else:
             try:
-                ensure_sim_assets(config)
-                ensure_skill_assets(config)
+                with live_step("assets", "world geometry"):
+                    ensure_sim_assets(config)
+                with live_step("skills", "skill assets"):
+                    ensure_skill_assets(config)
             except StackError as exc:
                 raise StackError(
                     f"{exc}\n\n"
                     "This step needs internet access. Re-run with a connection, or re-run "
                     f"`{CLI_SIM} up --offline` to start with whatever is already downloaded."
                 ) from exc
-        ensure_sim_viewer_bundle(config, offline=offline)
-        config["world_endpoint"] = ensure_world_server(config)
+        with live_step("viewer", "3D viewer bundle"):
+            ensure_sim_viewer_bundle(config, offline=offline)
+        with live_step("world", "physics world"):
+            config["world_endpoint"] = ensure_world_server(config)
 
         started = True
         try:
-            ensure_os_container(config, os_env_file, offline=offline)
+            with live_step("os", "Innate OS container"):
+                ensure_os_container(config, os_env_file, offline=offline)
         except StackError as exc:
             if offline:
                 raise
@@ -152,17 +158,18 @@ def cmd_up(
                 "to reuse the existing images instead of pulling/building."
             ) from exc
 
-        log("Waiting for ROS bridge and brain client...")
         # Startup is dominated by ROS node bring-up (the workspace build
         # cache is warm), so give the nodes real time to come up.
-        if not wait_for_os_runtime_ready(config, timeout_seconds=120.0):
+        with live_step("brain", "ROS bridge and brain client") as step:
+            step.ok = wait_for_os_runtime_ready(config, timeout_seconds=120.0)
+        if not step.ok:
             print_startup_checks(config, sim_driver_ready=False)
             raise StackError(
                 "The OS ROS bridge/brain client did not become ready.\n"
                 f"Recent OS log output:\n{tail_file(OS_SESSION_LOG_PATH, limit=80)}"
             )
-        log("Waiting for the sim driver (/odom)...")
-        sim_driver_ready = wait_for_virtual_mars(config)
+        with live_step("sim", "sim driver (/odom)") as step:
+            sim_driver_ready = step.ok = wait_for_virtual_mars(config)
         world_alive = print_startup_checks(config, sim_driver_ready=sim_driver_ready)
         if not world_alive:
             # It passed the startup gate and died during boot -- on small

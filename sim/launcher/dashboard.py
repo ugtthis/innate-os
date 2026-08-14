@@ -275,6 +275,8 @@ class LiveStep:
         self.label = label
         self.message = message
         self.detail = ""
+        # For work that reports failure by returning rather than raising.
+        self.ok = True
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -341,7 +343,7 @@ def live_step(label: str, message: str):
         step.finish(ok=False)
         raise
     else:
-        step.finish()
+        step.finish(ok=step.ok)
     finally:
         _active_step = previous
 

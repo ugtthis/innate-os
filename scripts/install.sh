@@ -558,6 +558,7 @@ install_docker_linux() {
     as_root sh "$TMPDIR_INSTALL/get-docker.sh"
     if [ "$(id -u)" -ne 0 ]; then
         as_root usermod -aG docker "$(id -un)"
+        : >"$TMPDIR_INSTALL/docker-group-granted"
     fi
 }
 
@@ -568,11 +569,20 @@ install_docker_linux() {
 # `id -nG` reports this process's own credentials -- the difference IS the
 # pending grant.
 docker_group_pending() {
+    # Capability first, membership second. Docker Desktop's WSL integration
+    # serves a socket this user can already reach, while the distro's group
+    # database may still show a grant an older session never picked up --
+    # sending someone to log out of a Docker that works for them.
+    docker info >/dev/null 2>&1 && return 1
     [ "$(id -u)" -eq 0 ] && return 1
     id -nG "$(id -un)" 2>/dev/null | tr ' ' '\n' | grep -qx docker || return 1
     id -nG 2>/dev/null | tr ' ' '\n' | grep -qx docker && return 1
     return 0
 }
+
+# install_docker_linux runs inside step()'s subshell, so it leaves a file
+# rather than setting a variable this shell would never see.
+docker_group_granted_here() { [ -f "$TMPDIR_INSTALL/docker-group-granted" ]; }
 
 ensure_docker() {
     if ! have docker; then
@@ -587,7 +597,11 @@ ensure_docker() {
     ensure_working_compose
     if docker_group_pending; then
         NEED_RELOGIN=1
-        note "added you to the docker group"
+        if docker_group_granted_here; then
+            note "added you to the docker group"
+        else
+            note "this session predates your docker group membership"
+        fi
         return 0
     fi
     if ! step "docker" "Starting the Docker daemon" "Docker daemon running" start_docker_daemon; then
@@ -725,6 +739,10 @@ run_setup() {
     # to -- enough to finish the install now instead of after a logout.
     if have sg; then
         with_tty sg docker -c "cd '$INNATE_DIR' && ./innate-sim setup" || die "$setup_failed"
+        return 0
+    fi
+    if have sudo; then
+        with_tty sudo -u "$(id -un)" -- sh -c "cd '$INNATE_DIR' && ./innate-sim setup" || die "$setup_failed"
         return 0
     fi
     report_relogin

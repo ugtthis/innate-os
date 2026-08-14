@@ -159,6 +159,16 @@ STEP_LABEL_WIDTH = 8
 SELECTED, UNSELECTED = "●", "○"
 
 
+EDITORS = ("cursor", "code", "windsurf", "zed", "subl")
+
+
+def detect_editor() -> str | None:
+    """The first editor on PATH, matching what scripts/install-sim.sh offers at
+    the end of an install. None rather than a guess: a command that is not
+    installed is worse than no suggestion."""
+    return next((editor for editor in EDITORS if shutil.which(editor)), None)
+
+
 def menus_supported() -> bool:
     return bool(termios and tty and sys.stdin.isatty() and sys.stdout.isatty())
 
@@ -866,18 +876,24 @@ def render_status(
     # and the checkout they write skills in. Everything else on this screen is
     # for when something has gone wrong, so spend the whitespace here.
     print()
-    web_app, checkout = "https://localhost", str(config["os_repo"])
-    column = max(len(web_app), len(checkout))
-    print_dashboard_line(
-        f"    {GREEN}{BOLD}▸  {web_app:<{column}}{NC}   {DIM}simulator: run in your browser{NC}",
-        term_width,
-    )
-    print_dashboard_line(
-        f"    {CYAN}{BOLD}✎  {checkout:<{column}}{NC}   {DIM}code: skills and agents live in workspace/{NC}",
-        term_width,
-    )
+    checkout = str(config["os_repo"])
+    # What to do, then where -- an instruction reads better than a URL with a
+    # caption after it. The editor row is only offered when one is installed.
+    destinations = [
+        (GREEN, "▸", "Open simulator in browser", "https://localhost"),
+        (CYAN, "✎", "Edit code in", checkout),
+    ]
+    editor = detect_editor()
+    if editor:
+        destinations.append((DIM, "⌨", "Open it in your editor", f"{editor} {checkout}"))
+    label_width = max(len(label) for _, _, label, _ in destinations)
+    for colour, mark, label, value in destinations:
+        print_dashboard_line(
+            f"    {colour}{mark}{NC}  {BOLD}{label:<{label_width}}{NC}   {colour}{value}{NC}",
+            term_width,
+        )
     print()
-    used_lines += 4
+    used_lines += len(destinations) + 2
     print_dashboard_line(
         "   ".join(
             [

@@ -176,6 +176,12 @@ step() {
     hide_cursor
     step_n=0
     while kill -0 "$step_pid" 2>/dev/null; do
+        # Roughly once a second: a terminal resized during a ten-minute step
+        # leaves every later frame built for a width that no longer exists,
+        # and a frame wider than the terminal wraps -- which is one physical
+        # row more than the redraw moves back up, so the frame walks down the
+        # screen leaving a copy behind on every pass.
+        [ "$((step_n % 8))" -eq 0 ] && STEP_WIDTH=$(terminal_width)
         # Elapsed from the frame count: this loop spawns enough processes per
         # second already without a `date` in it.
         draw_step_frame "$(spinner_frame "$step_n")" "$((step_n * 12 / 100))"
@@ -191,6 +197,23 @@ step() {
     printf '  %s%8s%s  %s✔%s %s\n' "$CYAN" "$step_label" "$NC" "$GREEN" "$NC" "$step_done"
 }
 
+# For work that prompts, or runs for minutes: no spinner, no cursor
+# arithmetic, output straight to the terminal and the log. A drawn frame
+# assumes it is the only thing writing to the screen, which a tool asking for
+# a password -- or one that writes to /dev/tty behind our redirection -- is
+# not. Slower to read, impossible to desynchronise.
+step_streamed() {
+    step_label=$1
+    step_msg=$2
+    step_done=$3
+    shift 3
+    say "$step_label" "$step_msg"
+    { "$@" 2>&1; printf '%s' "$?" >"$TMPDIR_INSTALL/step-status"; } | sed 's/^/            /' | tee -a "$LOG_FILE"
+    step_status=$(cat "$TMPDIR_INSTALL/step-status")
+    [ "$step_status" -eq 0 ] || return "$step_status"
+    printf '  %s%8s%s  %s✔%s %s\n' "$CYAN" "$step_label" "$NC" "$GREEN" "$NC" "$step_done"
+}
+
 # The status line plus the tail of the log, so a long step shows its work
 # rather than a spinner that cannot be told apart from a hang. Always the same
 # number of rows, so the cursor can be walked back over them.
@@ -200,8 +223,14 @@ draw_step_frame() {
     frame_width=$STEP_WIDTH
     # "  " + 8 label + "  " + spinner + " " = 14 before the message, then
     # "  " + elapsed + "s" after it; the log rows spend 14 on "  " + 8 + "  | ".
-    frame_room=$((frame_width - 17 - ${#2}))
-    tail_room=$((frame_width - 14))
+    frame_room=$((frame_width - 18 - ${#2}))
+    tail_room=$((frame_width - 15))
+    # \033[J first: clear from here to the end of the screen, so the frame is
+    # rebuilt rather than accumulated. Anything that wrote to the terminal
+    # without going through us -- a sudo prompt, a tool writing to /dev/tty --
+    # shifts the cursor, and a frame that only counts rows would then append a
+    # copy of itself on every redraw instead of overwriting the last one.
+    printf '\r\033[J'
     printf '\033[K  %s%8s%s  %s %s  %s%ss%s\n' \
         "$CYAN" "$step_label" "$NC" "$1" "$(printf '%s' "$step_msg" | cut -c "1-$frame_room")" "$DIM" "$2" "$NC"
     # Tabs and colour codes are what a package manager actually emits, and
@@ -688,7 +717,8 @@ $macos_manual"
     # Before the step, never inside it: brew needs sudo for the /usr/local
     # links, and a password prompt under a spinner is a hang with no message.
     prime_sudo
-    step "docker" "Installing Docker Desktop" "Docker Desktop installed" install_docker_macos ||
+    note "Homebrew's output follows; this takes a few minutes."
+    step_streamed "docker" "Installing Docker Desktop" "Docker Desktop installed" install_docker_macos ||
         die "Could not install Docker Desktop. Details: $LOG_FILE"
 }
 

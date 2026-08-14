@@ -269,7 +269,7 @@ def confirm(question: str, *, default: bool = True) -> bool:
 class LiveStep:
     """One line that spins while work happens and settles into a check mark.
 
-    The same shape scripts/install.sh draws for Docker and uv, so an install
+    The same shape scripts/install-sim.sh draws for Docker and uv, so an install
     that starts in the shell installer and finishes in the launcher reads as
     one process. Whatever the step logs while it runs becomes the detail after
     the message, rather than scrolling the line away.

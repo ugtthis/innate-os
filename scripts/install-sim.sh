@@ -55,6 +55,8 @@ DOCKER_WAIT_S=180
 LOG_FILE="${INNATE_INSTALL_LOG:-$HOME/.innate-install.log}"
 VERBOSE="${INNATE_VERBOSE:-0}"
 LOG_TAIL_ROWS=3
+# Survives sudo's env_reset and sg, which inheritance does not.
+BANNER_SHOWN="INNATE_BANNER_SHOWN=1"
 
 PLATFORM=""
 TMPDIR_INSTALL=""
@@ -730,7 +732,7 @@ run_setup() {
     printf '\n'
 
     if [ "$NEED_RELOGIN" -eq 0 ]; then
-        with_tty sh -c "cd '$INNATE_DIR' && ./innate-sim setup" || die "$setup_failed"
+        with_tty sh -c "cd '$INNATE_DIR' && $BANNER_SHOWN ./innate-sim setup" || die "$setup_failed"
         return 0
     fi
 
@@ -738,11 +740,11 @@ run_setup() {
     # reach the socket. `sg` runs one command under a group you already belong
     # to -- enough to finish the install now instead of after a logout.
     if have sg; then
-        with_tty sg docker -c "cd '$INNATE_DIR' && ./innate-sim setup" || die "$setup_failed"
+        with_tty sg docker -c "cd '$INNATE_DIR' && $BANNER_SHOWN ./innate-sim setup" || die "$setup_failed"
         return 0
     fi
     if have sudo; then
-        with_tty sudo -u "$(id -un)" -- sh -c "cd '$INNATE_DIR' && ./innate-sim setup" || die "$setup_failed"
+        with_tty sudo -u "$(id -un)" -- sh -c "cd '$INNATE_DIR' && $BANNER_SHOWN ./innate-sim setup" || die "$setup_failed"
         return 0
     fi
     report_relogin
@@ -838,10 +840,10 @@ offer_to_start() {
     printf '\n'
     if [ "$NEED_RELOGIN" -eq 1 ] && have sg; then
         exec 0<&3
-        exec sg docker -c "'$INNATE_DIR/innate-sim' up"
+        exec sg docker -c "$BANNER_SHOWN '$INNATE_DIR/innate-sim' up"
     fi
     exec 0<&3
-    exec "$INNATE_DIR/innate-sim" up
+    exec env INNATE_BANNER_SHOWN=1 "$INNATE_DIR/innate-sim" up
 }
 
 main() {
@@ -852,8 +854,9 @@ main() {
     : >"$LOG_FILE" 2>/dev/null || LOG_FILE="$TMPDIR_INSTALL/install.log"
     attach_terminal
     print_intro
-    # The wordmark is this screen's; `innate-sim setup` and the `up` that may
-    # follow it inherit the fact that it has already been shown.
+    # The wordmark is this screen's. Exporting is not enough on its own:
+    # sudo resets the environment by default and sg is setuid, so the
+    # commands below carry the assignment in the command line too.
     export INNATE_BANNER_SHOWN=1
     detect_platform
     check_install_dir

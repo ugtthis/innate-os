@@ -1,7 +1,7 @@
 name: Advance sim-stable
 
 # `sim-stable` is the commit the one-line installer clones
-# (scripts/install.sh, served at link.innate.bot/sim). It tracks main
+# (scripts/install-sim.sh, served at link.innate.bot/sim). It tracks main
 # automatically, but only as far as the last commit whose prebuilt images GHCR
 # actually serves -- otherwise a newcomer's first `up` is a local ROS build
 # instead of a pull.

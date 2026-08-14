@@ -628,8 +628,23 @@ ensure_git() {
     step "git" "Installing git" "git installed" install_git || die "Could not install git."
 }
 
+docker_answers() {
+    if [ "$NEED_RELOGIN" -eq 1 ]; then
+        with_docker_group "docker info >/dev/null 2>&1" >/dev/null 2>&1
+    else
+        docker info >/dev/null 2>&1
+    fi
+}
+
+# Is there any way to reach the socket before the next login? If not, the
+# daemon step can only fail on the socket, so it is left to report_relogin.
+docker_group_route_available() {
+    [ "$NEED_RELOGIN" -eq 0 ] && return 0
+    have sg || have sudo
+}
+
 start_docker_daemon() {
-    docker info >/dev/null 2>&1 && return 0
+    docker_answers && return 0
     if [ "$PLATFORM" = "macos" ]; then
         open -a Docker >/dev/null 2>&1 || true
     elif have systemctl; then
@@ -641,7 +656,7 @@ start_docker_daemon() {
 
     waited=0
     while [ "$waited" -lt "$DOCKER_WAIT_S" ]; do
-        docker info >/dev/null 2>&1 && return 0
+        docker_answers && return 0
         sleep 3
         waited=$((waited + 3))
     done
@@ -738,8 +753,8 @@ ensure_docker() {
         else
             note "this session predates your docker group membership"
         fi
-        return 0
     fi
+    docker_group_route_available || return 0
     if [ "$PLATFORM" = "macos" ] && ! docker info >/dev/null 2>&1; then
         note "opening Docker Desktop -- accept its terms if it asks, and leave it running"
     fi

@@ -509,6 +509,8 @@ IMAGE_MOUNT_VERBS = ("up", "setup")
 # No fixed 5.x release is known, so the whole major is refused; narrow this
 # the moment one ships.
 BROKEN_COMPOSE_IMAGE_MOUNTS_SINCE = (5, 0, 0)
+# Kept in step with COMPOSE_2X_VERSION in scripts/install-sim.sh.
+COMPOSE_2X_RELEASE = "https://github.com/docker/compose/releases/download/v2.40.3"
 
 
 @functools.cache  # `up` probes the daemon twice (cmd_up, then start_cloud_agent) -- warn once
@@ -573,13 +575,29 @@ def _refuse_broken_compose(version_output: str | None, command_hint: str) -> Non
         # would leave a running stack with no way to stop it from the launcher.
         warn(f"Docker Compose {running} cannot mount the sim viewer's assets, so `{CLI_SIM} up` will refuse.")
         return
+    # Docker Desktop bundles Compose, so on macOS there is no package to
+    # downgrade -- the fix is a 2.x plugin in the directory the CLI reads
+    # first. The apt remedy would be nonsense there.
+    if sys.platform == "darwin":
+        arch = "aarch64" if oci.host_arch() == "arm64" else "x86_64"
+        remedy = (
+            "Docker Desktop bundles Compose, so install a 2.x plugin where the CLI looks first:\n"
+            "  mkdir -p ~/.docker/cli-plugins\n"
+            f"  curl -fsSL {COMPOSE_2X_RELEASE}/docker-compose-darwin-{arch} \\\n"
+            "    -o ~/.docker/cli-plugins/docker-compose\n"
+            "  chmod +x ~/.docker/cli-plugins/docker-compose"
+        )
+    else:
+        remedy = (
+            "Install the newest 2.x Compose, which is unaffected:\n"
+            "  V=$(apt-cache madison docker-compose-plugin | awk '{print $3}' | grep -m1 '^2\\.')\n"
+            "  sudo apt install -y --allow-downgrades docker-compose-plugin=$V"
+        )
     raise StackError(
         f"Docker Compose {running} cannot mount the sim viewer's assets: it resolves a\n"
         "`type: image` mount to the image's manifest digest and passes that as an image ID,\n"
         "so the daemon answers `No such image` when the container is created.\n"
-        "Install the newest 2.x Compose, which is unaffected:\n"
-        "  V=$(apt-cache madison docker-compose-plugin | awk '{print $3}' | grep -m1 '^2\\.')\n"
-        "  sudo apt install -y --allow-downgrades docker-compose-plugin=$V\n"
+        f"{remedy}\n"
         f"Then rerun `{command_hint}`. Guide: {COMPOSE_INSTALL_URL}"
     )
 

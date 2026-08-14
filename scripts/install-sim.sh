@@ -740,7 +740,6 @@ ensure_docker() {
     fi
 
     [ -n "$BLOCKED_REASON" ] && return 0
-    ensure_working_compose
     if docker_group_pending; then
         NEED_RELOGIN=1
         if docker_group_granted_here; then
@@ -760,6 +759,10 @@ It may be waiting for you to accept its terms -- check the Docker window, then r
         fi
         die "The Docker daemon is installed but did not start. Start it (sudo systemctl start docker) and rerun this command."
     fi
+    # After the daemon, not before: `docker compose version` needs a docker
+    # CLI on PATH, and on macOS that arrives with Docker Desktop -- which the
+    # step above may have installed seconds ago.
+    ensure_working_compose
 }
 
 # Compose 5 resolves a `type: image` mount to the image's manifest digest and
@@ -784,8 +787,13 @@ install_compose_plugin_binary() {
         aarch64 | arm64) compose_arch=aarch64 ;;
         *) return 1 ;;
     esac
+    case "$(uname -s)" in
+        Darwin) compose_os=darwin ;;
+        Linux) compose_os=linux ;;
+        *) return 1 ;;
+    esac
     mkdir -p "$HOME/.docker/cli-plugins"
-    curl -fsSL "$COMPOSE_2X_URL/$COMPOSE_2X_VERSION/docker-compose-linux-$compose_arch" \
+    curl -fsSL "$COMPOSE_2X_URL/$COMPOSE_2X_VERSION/docker-compose-$compose_os-$compose_arch" \
         -o "$TMPDIR_INSTALL/docker-compose"
     chmod +x "$TMPDIR_INSTALL/docker-compose"
     mv "$TMPDIR_INSTALL/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"

@@ -1,0 +1,54 @@
+name: Advance sim-stable
+
+# `sim-stable` is the commit the one-line installer clones
+# (scripts/install.sh, served at link.innate.bot/sim). It tracks main
+# automatically, but only as far as the last commit whose prebuilt images GHCR
+# actually serves -- otherwise a newcomer's first `up` is a local ROS build
+# instead of a pull.
+#
+# To stop tracking main and pin releases by hand, disable this workflow and
+# move the branch deliberately: `git push origin <sha>:sim-stable`.
+
+on:
+  push:
+    branches: [main]
+  # Commits that touch image inputs are not publishable when they land; this
+  # picks them up once their (long, multi-arch) build finishes.
+  workflow_run:
+    workflows: ["Publish Simulator Images", "Publish Viewer Bundle"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: advance-sim-stable
+  cancel-in-progress: false
+
+jobs:
+  advance:
+    if: github.repository == 'innate-inc/innate-os' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          # Full history: pushing from a shallow clone is rejected, and the
+          # push has to be a fast-forward of whatever sim-stable points at.
+          fetch-depth: 0
+
+      - id: images
+        # A held pointer is the normal state during an image build, not a
+        # failure -- the job stays green and says so.
+        continue-on-error: true
+        run: python3 ci/check_published_sim_images.py
+
+      - if: steps.images.outcome == 'success'
+        run: |
+          git push origin HEAD:refs/heads/sim-stable
+          echo "::notice::sim-stable now points at $(git rev-parse --short HEAD)."
+
+      - if: steps.images.outcome != 'success'
+        run: |
+          echo "::notice::sim-stable held: prebuilt images for $(git rev-parse --short HEAD) are not all published yet."

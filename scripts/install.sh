@@ -779,6 +779,9 @@ main() {
     : >"$LOG_FILE" 2>/dev/null || LOG_FILE="$TMPDIR_INSTALL/install.log"
     attach_terminal
     print_intro
+    # The wordmark is this screen's; `innate-sim setup` and the `up` that may
+    # follow it inherit the fact that it has already been shown.
+    export INNATE_BANNER_SHOWN=1
     detect_platform
     check_install_dir
     build_plan

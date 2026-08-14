@@ -65,11 +65,12 @@ from config import (
     warn,
 )
 from dashboard import (
-    BOLD,
+    CYAN,
     DIM,
     GREEN,
     NC,
     RED,
+    STEP_LABEL_WIDTH,
     USE_COLOR,
     active_step,
     format_bytes,
@@ -1336,9 +1337,10 @@ def runtime_already_running(config: dict[str, object]) -> bool:
 
 
 def format_startup_check(ok: bool, label: str, detail: str) -> str:
-    icon = "✓" if ok else "✗"
-    color = GREEN if ok else RED
-    return f"  {color}{icon}{NC} {BOLD}{label}:{NC} {detail}"
+    """The row a live step settles into, so the summary at the end of `up` and
+    the steps that produced it are visibly one list."""
+    mark = f"{GREEN}✔{NC}" if ok else f"{RED}✗{NC}"
+    return f"  {CYAN}{label:>{STEP_LABEL_WIDTH}}{NC}  {mark} {detail}"
 
 
 def world_server_health(*, timeout: float = 2.0) -> tuple[bool, str]:
@@ -1378,35 +1380,35 @@ def print_startup_checks(
         time.sleep(2.0)  # a saturated box can miss one ping; don't cry wolf
         world_ok, world_detail = world_server_health()
     checks = [
-        (world_ok, "World server", world_detail),
+        (world_ok, "world", world_detail),
         (
             os_status["os_running"],
-            "OS container",
+            "os",
             "running" if os_status["os_running"] else "down",
         ),
         (
             os_status["os_session_running"],
-            "ROS session",
+            "ros",
             "tmux session running" if os_status["os_session_running"] else "missing",
         ),
         (
             bool(probe["rosbridge_live"]),
-            "ROSBridge",
+            "bridge",
             "ws://localhost:9090 live" if probe["rosbridge_live"] else "not accepting connections",
         ),
         (
             os_status["brain_process_live"],
-            "Brain process",
+            "brain",
             "brain_client_node.py running" if os_status["brain_process_live"] else "brain_client_node.py missing",
         ),
         (
             sim_driver_ready,
-            "Sim driver",
+            "sim",
             "/odom publishing" if sim_driver_ready else "/odom not publishing",
         ),
     ]
 
-    log("Startup checks:")
+    print()
     for ok, label, detail in checks:
         print(format_startup_check(ok, label, detail))
     return world_ok

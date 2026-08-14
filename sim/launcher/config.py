@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from dashboard import CYAN, GREEN, NC, YELLOW, active_step
+from dashboard import CYAN, GREEN, NC, STEP_LABEL_WIDTH, YELLOW, active_step
 
 try:
     import tomllib as toml_parser
@@ -180,6 +180,17 @@ class DockerUnresponsiveError(StackError):
     """Docker did not answer a probe; availability is unknown, not "no"."""
 
 
+def labelled(label: str, message: str, colour: str = CYAN) -> str:
+    """One line in the launcher's label column, the shape every step, check and
+    prompt shares. Continuation lines keep the indent rather than starting back
+    at the margin, so a multi-line remedy still reads as one message."""
+    indent = " " * (STEP_LABEL_WIDTH + 4)
+    first, *rest = message.split("\n")
+    lines = [f"  {colour}{label:>{STEP_LABEL_WIDTH}}{NC}  {first}"]
+    lines += [f"{indent}{line}" for line in rest]
+    return "\n".join(lines)
+
+
 def log(message: str) -> None:
     # Inside a live step, progress IS the step's detail; printing it as its own
     # line would scroll the spinner away one message at a time.
@@ -187,15 +198,15 @@ def log(message: str) -> None:
     if step is not None:
         step.detail = message
         return
-    print(f"{CYAN}[innate]{NC} {message}")
+    print(labelled("innate", message))
 
 
 def success(message: str) -> None:
-    _print_around_step(f"{GREEN}[ok]{NC} {message}")
+    _print_around_step(labelled("ok", message, GREEN))
 
 
 def warn(message: str) -> None:
-    _print_around_step(f"{YELLOW}[warn]{NC} {message}")
+    _print_around_step(labelled("warn", message, YELLOW))
 
 
 def _print_around_step(line: str) -> None:

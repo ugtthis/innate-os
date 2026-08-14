@@ -400,10 +400,21 @@ def clear_screen() -> None:
         print("\033[2J\033[H", end="")
 
 
+BANNER_SHOWN_ENV = "INNATE_BANNER_SHOWN"
+
+
 def print_banner() -> None:
     # No clear_screen: the user's scrollback (earlier runs, their own
     # commands) is theirs. The live dashboard uses the alternate screen
     # buffer, so it never needs a destructive clear either.
+    #
+    # Once per session, not once per command: the installer runs `setup` and
+    # then `up`, and `up` re-execs itself under `sg`, so the same wordmark
+    # would greet the same person four times in one install. Exported, so the
+    # commands this process spawns inherit the answer.
+    if os.environ.get(BANNER_SHOWN_ENV):
+        return
+    os.environ[BANNER_SHOWN_ENV] = "1"
     divider()
     print_ascii_banner()
     print(f"{DIM}one env // one cli // os + sim{NC}")

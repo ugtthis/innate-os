@@ -38,6 +38,7 @@ TMPDIR_INSTALL=""
 NEED_RELOGIN=0
 INTERACTIVE=0
 PLAN=""
+PLAN_N=0
 SUDO_PRIMED=0
 STEP_ACTIVE=0
 step_pid=""
@@ -241,8 +242,11 @@ confirm() {
     esac
 }
 
-plan_add() { PLAN="$PLAN  - $1
-"; }
+plan_add() {
+    PLAN_N=$((PLAN_N + 1))
+    PLAN="$PLAN    $PLAN_N) $1
+"
+}
 
 detect_platform() {
     case "$(uname -s)" in
@@ -296,30 +300,36 @@ uv_installed() {
 }
 
 build_plan() {
-    have git || plan_add "git (your package manager)"
+    have git || plan_add "Install git (with your package manager)"
     have docker || {
         if [ "$PLATFORM" = "macos" ]; then
-            plan_add "Docker Desktop (Homebrew cask)"
+            plan_add "Install Docker Desktop (Homebrew cask)"
         else
-            plan_add "Docker Engine + Compose ($DOCKER_INSTALL_URL, needs sudo)"
+            plan_add "Install Docker Engine + Compose (from $DOCKER_INSTALL_URL, needs sudo)"
         fi
     }
-    uv_installed || plan_add "uv (user-local, no sudo)"
+    uv_installed || plan_add "Install uv, which runs the physics world (user-local, no sudo)"
     if [ "$PLATFORM" != "macos" ] && have apt-get; then
-        plan_add "OpenGL/OSMesa libraries: $GL_PACKAGES (needs sudo)"
+        plan_add "Install the rendering libraries: $GL_PACKAGES (needs sudo)"
     fi
     if [ -d "$INNATE_DIR/.git" ]; then
-        plan_add "update the innate-os checkout in $INNATE_DIR"
+        plan_add "Update the innate-os checkout in $INNATE_DIR"
     else
-        plan_add "clone innate-os ($REF) into $INNATE_DIR"
+        plan_add "Clone innate-os ($REF) into $INNATE_DIR"
     fi
+    # Never a surprise at the confirmation prompt: this is the step that asks
+    # for a key and then spends several GB of someone's connection.
+    plan_add "Ask how the agent reaches a cloud LLM, then download the simulator (a few GB)"
 }
 
 review_plan() {
-    printf '\n'
-    say "install" "$(printf '%s' "$PLAN" | sed 's/^  - //' | head -1)"
-    printf '%s' "$PLAN" | sed '1d;s/^  - /                    /'
-    printf '\n'
+    printf '\n  %sThe installer will:%s\n\n' "$BOLD" "$NC"
+    printf '%s\n' "$PLAN"
+    if [ -z "$NC" ] || [ "$VERBOSE" != "0" ]; then
+        printf '  %sCommand output is shown as it runs.%s\n\n' "$DIM" "$NC"
+    else
+        printf '  %sDetailed output goes to %s%s\n\n' "$DIM" "$LOG_FILE" "$NC"
+    fi
     confirm "  Continue?" || die "Aborted. Nothing was installed."
     printf '\n'
 }
